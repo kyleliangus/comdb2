@@ -8,8 +8,8 @@ all: $(TEST_MAINS)
 consumer: consumer.c 
 	$(CC) consumer.c $(CFLAGS) -o $@
 
-producer: producer.c
-	$(CC) producer.c $(CFLAGS) -o $@
+producer: producer.c send_utils.c
+	$(CC) producer.c send_utils.c $(CFLAGS) -o $@
 
 clean: 
 	rm -f $(TEST_MAINS)

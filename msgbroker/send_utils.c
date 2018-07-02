@@ -1,7 +1,7 @@
 #include <librdkafka/rdkafka.h>
 #include <stdlib.h>
 
-#include <send_utils.h>
+#include "send_utils.h"
 
 /**
  * @brief Message delivery report callback.
@@ -14,6 +14,7 @@
  * The callback is triggered from rd_kafka_poll() and executes on
  * the application's thread.
  */
+static char errstr[512];       /* librdkafka API error reporting buffer */
 static void dr_msg_cb (rd_kafka_t *rk,
         const rd_kafka_message_t *rkmessage, void *opaque) {
     if (rkmessage->err)
@@ -29,12 +30,11 @@ static void dr_msg_cb (rd_kafka_t *rk,
 }
 
 
-struct Connection* setup_kafka_connection(const char* brokers, const char* topic)
+struct Send_Connection* setup_connection(const char* brokers, const char* topic)
 {
     rd_kafka_t *rk;         /* Producer instance handle */
     rd_kafka_topic_t *rkt;  /* Topic object */
     rd_kafka_conf_t *conf;  /* Temporary configuration object */
-    char errstr[512];       /* librdkafka API error reporting buffer */
 
     /*
      * Create Kafka client configuration place-holder
@@ -87,14 +87,16 @@ struct Connection* setup_kafka_connection(const char* brokers, const char* topic
         return NULL;
     }
 
-    return (struct Connection *) (malloc(sizeof(struct Connection)));
+    struct Send_Connection* retCnct = (struct Send_Connection *) (malloc(sizeof(struct Send_Connection)));
+    retCnct->rk = rk;
+    retCnct->rkt = rkt;
 
+    return retCnct;
 }
 
 
-void send_msg(struct Connection* cnct, char* buff, size_t len)
+void send_msg(struct Send_Connection* cnct, char* buff, size_t len)
 {
-
     rd_kafka_t *rk = cnct->rk;         /* Producer instance handle */
     rd_kafka_topic_t *rkt = cnct->rkt;  /* Topic object */
 
@@ -133,7 +135,8 @@ retry:
                 rd_kafka_err2str(rd_kafka_last_error()));
 
         /* Poll to handle delivery reports */
-        if (rd_kafka_last_error() ==
+        rd_kafka_resp_err_t err_resp = rd_kafka_last_error();
+        if (err_resp ==
                 RD_KAFKA_RESP_ERR__QUEUE_FULL) {
             /* If the internal queue is full, wait for
              * messages to be delivered and then retry.
@@ -147,6 +150,15 @@ retry:
              * queue.buffering.max.messages */
             rd_kafka_poll(rk, 1000/*block for max 1000ms*/);
             goto retry;
+        }
+        else if (err_resp ==
+                RD_KAFKA_RESP_ERR_MSG_SIZE_TOO_LARGE) {
+            fprintf(stderr, "Message is larger than configured max size, can't send\n");
+            return;
+        }
+        else {
+            fprintf(stderr, "Either partition or topic is unknown, can't send\n");
+            return;
         }
     } else {
         fprintf(stderr, "%% Enqueued message (%zu bytes) "
@@ -166,6 +178,29 @@ retry:
      * to make sure previously produced messages have their
      * delivery report callback served (and any other callbacks
      * you register). */
-    rd_kafka_poll(rk, 0/*non-blocking*/);
+    rd_kafka_poll(rk, -1 /*blocking, use 0 for non-blocking*/);
+
+}
+
+
+void close_connection(struct Send_Connection* cnct)
+{
+    rd_kafka_t *rk = cnct->rk;         /* Producer instance handle */
+    rd_kafka_topic_t *rkt = cnct->rkt;  /* Topic object */
+
+    /* Wait for final messages to be delivered or fail.
+     * rd_kafka_flush() is an abstraction over rd_kafka_poll() which
+     * waits for all messages to be delivered. */
+    fprintf(stderr, "%% Flushing final messages..\n");
+    //rd_kafka_flush(rk, 10*1000 /* wait for max 10 seconds */);
+
+    while (rd_kafka_outq_len(rk) > 0)
+         rd_kafka_poll(rk, 50); 
+
+    /* Destroy topic object */
+    rd_kafka_topic_destroy(rkt);
+
+    /* Destroy the producer instance */
+    rd_kafka_destroy(rk);
 
 }
