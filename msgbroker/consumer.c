@@ -25,6 +25,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+#define _DEFAULT_SOURCE 
 
 #include <ctype.h>
 #include <signal.h>
@@ -36,10 +37,19 @@
 #include <errno.h>
 #include <getopt.h>
 
+#include <sys/types.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 /* Typical include path would be <librdkafka/rdkafka.h>, but this program
  * is builtin from within the librdkafka source tree and thus differs. */
 #include <librdkafka/rdkafka.h>  /* for Kafka driver */
 
+#include "rcv_utils.h"
+
+static char addr[256];
 
 static int run = 1;
 static rd_kafka_t *rk;
@@ -50,6 +60,42 @@ static 	enum {
     OUTPUT_HEXDUMP,
     OUTPUT_RAW,
 } output = OUTPUT_HEXDUMP;
+
+static int getIPAddr(char* ipv4Addr)
+{
+    char hostbuffer[256];
+    int hostname;
+ 
+    // To retrieve hostname
+    hostname = gethostname(hostbuffer, sizeof(hostbuffer));
+    if (hostname == -1)
+    {
+        return 1;
+    }
+ 
+    struct addrinfo hints, *res;
+    int status;
+    char ipstr[INET6_ADDRSTRLEN];
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; // AF_INET or AF_INET6 to force version
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ((status = getaddrinfo(hostbuffer, NULL, &hints, &res)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+        return 2;
+    }
+
+    struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
+    void *addr = &(ipv4->sin_addr);
+    inet_ntop(res->ai_family, addr, ipstr, sizeof ipstr);
+    printf("  %s: %s\n", hostbuffer, ipstr);
+
+    memcpy(ipv4Addr, ipstr, sizeof ipstr);
+    freeaddrinfo(res); // free the linked list
+
+    return 0;
+}
 
 static void stop (int sig) {
     if (!run)
@@ -259,6 +305,9 @@ static int describe_groups (rd_kafka_t *rk, const char *group) {
 
     rd_kafka_group_list_destroy(grplist);
 
+    
+    fprintf(stdout, "This is my dump!\n");
+    rd_kafka_dump(stdout, rk);
     return 0;
 }
 
@@ -285,19 +334,6 @@ int main (int argc, char **argv) {
     int i;
 
     quiet = !isatty(STDIN_FILENO);
-
-    /* Kafka configuration */
-    conf = rd_kafka_conf_new();
-
-    /* Set logger */
-    rd_kafka_conf_set_log_cb(conf, logger);
-
-    /* Quick termination */
-    snprintf(tmp, sizeof(tmp), "%i", SIGIO);
-    rd_kafka_conf_set(conf, "internal.termination.signal", tmp, NULL, 0);
-
-    /* Topic configuration */
-    topic_conf = rd_kafka_topic_conf_new();
 
     while ((opt = getopt(argc, argv, "g:b:qd:eX:ADO")) != -1) {
         switch (opt) {
@@ -460,61 +496,6 @@ usage:
      * Client/Consumer group
      */
 
-    if (strchr("CO", mode)) {
-        /* Consumer groups require a group id */
-        if (!group)
-            group = "rdkafka_consumer_example";
-        if (rd_kafka_conf_set(conf, "group.id", group,
-                    errstr, sizeof(errstr)) !=
-                RD_KAFKA_CONF_OK) {
-            fprintf(stderr, "%% %s\n", errstr);
-            exit(1);
-        }
-
-        /* Consumer groups always use broker based offset storage */
-        if (rd_kafka_topic_conf_set(topic_conf, "offset.store.method",
-                    "broker",
-                    errstr, sizeof(errstr)) !=
-                RD_KAFKA_CONF_OK) {
-            fprintf(stderr, "%% %s\n", errstr);
-            exit(1);
-        }
-
-        /* Set default topic config for pattern-matched topics. */
-        rd_kafka_conf_set_default_topic_conf(conf, topic_conf);
-
-        /* Callback called on partition assignment changes */
-        rd_kafka_conf_set_rebalance_cb(conf, rebalance_cb);
-    }
-
-    /* Create Kafka handle */
-    if (!(rk = rd_kafka_new(RD_KAFKA_CONSUMER, conf,
-                    errstr, sizeof(errstr)))) {
-        fprintf(stderr,
-                "%% Failed to create new consumer: %s\n",
-                errstr);
-        exit(1);
-    }
-
-    /* Add brokers */
-    if (rd_kafka_brokers_add(rk, brokers) == 0) {
-        fprintf(stderr, "%% No valid brokers specified\n");
-        exit(1);
-    }
-
-
-    if (mode == 'D') {
-        int r;
-        /* Describe groups */
-        r = describe_groups(rk, group);
-
-        rd_kafka_destroy(rk);
-        exit(r == -1 ? 1 : 0);
-    }
-
-    /* Redirect rd_kafka_poll() to consumer_poll() */
-    rd_kafka_poll_set_consumer(rk);
-
     topics = rd_kafka_topic_partition_list_new(argc - optind);
     is_subscription = 1;
     for (i = optind ; i < argc ; i++) {
@@ -533,86 +514,15 @@ usage:
         rd_kafka_topic_partition_list_add(topics, topic, partition);
     }
 
-    if (mode == 'O') {
-        /* Offset query */
 
-        err = rd_kafka_committed(rk, topics, 5000);
-        if (err) {
-            fprintf(stderr, "%% Failed to fetch offsets: %s\n",
-                    rd_kafka_err2str(err));
-            exit(1);
-        }
-
-        for (i = 0 ; i < topics->cnt ; i++) {
-            rd_kafka_topic_partition_t *p = &topics->elems[i];
-            printf("Topic \"%s\" partition %"PRId32,
-                    p->topic, p->partition);
-            if (p->err)
-                printf(" error %s",
-                        rd_kafka_err2str(p->err));
-            else {
-                printf(" offset %"PRId64"",
-                        p->offset);
-
-                if (p->metadata_size)
-                    printf(" (%d bytes of metadata)",
-                            (int)p->metadata_size);
-            }
-            printf("\n");
-        }
-
-        goto done;
-    }
-
-
-    if (is_subscription) {
-        fprintf(stderr, "%% Subscribing to %d topics\n", topics->cnt);
-
-        if ((err = rd_kafka_subscribe(rk, topics))) {
-            fprintf(stderr,
-                    "%% Failed to start consuming topics: %s\n",
-                    rd_kafka_err2str(err));
-            exit(1);
-        }
-    } else {
-        fprintf(stderr, "%% Assigning %d partitions\n", topics->cnt);
-
-        if ((err = rd_kafka_assign(rk, topics))) {
-            fprintf(stderr,
-                    "%% Failed to assign partitions: %s\n",
-                    rd_kafka_err2str(err));
-        }
-    }
+    struct Rcv_Connection* sscribe = setup_subscribe(brokers, topics, group);
 
     while (run) {
-        rd_kafka_message_t *rkmessage;
-
-        rkmessage = rd_kafka_consumer_poll(rk, 1000);
-        if (rkmessage) {
-            msg_consume(rkmessage);
-            rd_kafka_message_destroy(rkmessage);
-        }
+        char msg[512];
+        rcv_msg(sscribe, msg, 512);
     }
 
-done:
-    err = rd_kafka_consumer_close(rk);
-    if (err)
-        fprintf(stderr, "%% Failed to close consumer: %s\n",
-                rd_kafka_err2str(err));
-    else
-        fprintf(stderr, "%% Consumer closed\n");
-
-    rd_kafka_topic_partition_list_destroy(topics);
-
-    /* Destroy handle */
-    rd_kafka_destroy(rk);
-
-    /* Let background threads clean up and terminate cleanly. */
-    run = 5;
-    while (run-- > 0 && rd_kafka_wait_destroyed(1000) == -1)
-        printf("Waiting for librdkafka to decommission\n");
-    if (run <= 0)
-        rd_kafka_dump(stdout, rk);
+    close_subscribe(sscribe);
 
     return 0;
 }
