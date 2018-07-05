@@ -9,9 +9,39 @@
 #include <cdb2api.h>
 #include <arpa/inet.h>
 
+#include <signal.h>
+#include <time.h>
+#include <unistd.h>
+#include "send_utils.h"
 #include "strbuf.h"
 
-int sync(cdb2_hndl_tp *from, int64_t maxfrom, cdb2_hndl_tp *to, int64_t maxto);
+int db_sync(cdb2_hndl_tp *from, int64_t maxfrom, cdb2_hndl_tp *to, int64_t maxto);
+
+static int run = 1;
+static struct Send_Connection* cnct;
+
+static void stop (int sig) {
+    run = 0;
+}
+
+static char* marshal_data(int64_t seqno, int64_t blkpos, int optype, void* ops, int opsz) {
+    size_t marshal_len = 2*sizeof(int64_t) + 2*sizeof(int) + opsz + 1;
+    char* marshal = malloc(marshal_len);
+    memset(marshal, 0, marshal_len);
+
+    char* blkpos_ptr = marshal + sizeof(int64_t);
+    char* optype_ptr = marshal + 2*sizeof(int64_t);
+    char* opsz_ptr = optype_ptr + sizeof(int);
+    char* ops_ptr = opsz_ptr + sizeof(int);
+
+    memcpy(marshal, &seqno, sizeof(seqno));
+    memcpy(blkpos_ptr, &blkpos, sizeof(blkpos));
+    memcpy(optype_ptr, &optype, sizeof(optype));
+    memcpy(opsz_ptr, &opsz, sizeof(opsz));
+    memcpy(ops_ptr, ops, opsz);
+
+    return marshal;
+}
 
 void consume(cdb2_hndl_tp *db) {
     int rc = CDB2_OK;
@@ -33,13 +63,17 @@ int64_t query_int(cdb2_hndl_tp *db, char *sql, ...) {
     rc = cdb2_run_statement(db, sqlbuf);
     if (rc != CDB2_OK) {
         fprintf(stderr, "err %s: %d %s\n", sqlbuf, rc, cdb2_errstr(db));
+        va_end(args);
         return -1;
     }
     rc = cdb2_next_record(db);
-    if (rc != CDB2_OK)
+    if (rc != CDB2_OK) {
+        va_end(args);
         return -1;
+    }
     if (cdb2_column_value(db, 0) == NULL) {
         consume(db);
+        va_end(args);
         return 0;
     }
     ret = *(int64_t*) cdb2_column_value(db, 0);
@@ -462,8 +496,8 @@ int apply_clear(cdb2_hndl_tp *db, void *opsp, int opsz)
 int apply_op(cdb2_hndl_tp *db, int64_t seqno, int64_t blkpos, int64_t type, void *ops, int opsz) {
     uint8_t *p;
     int rc;
-    // printf("apply_op seqno %lld blkpos %lld type %d ops ", seqno, blkpos, type);
-    // hexdump(ops, opsz);
+    printf("apply_op seqno %lld blkpos %lld type %d ops ", seqno, blkpos, type);
+    hexdump(ops, opsz);
     p = (uint8_t*) ops;
 
     void *opscpy = NULL;
@@ -551,6 +585,13 @@ int apply_seqno(cdb2_hndl_tp *from, cdb2_hndl_tp *to, int64_t seqno, int maxblkp
         int opsz = cdb2_column_size(from, 1);
 
         rc = apply_op(to, seqno, blkpos, optype, ops, opsz);
+
+        // need to marshal seqno, blkpos, optype, ops, and opsz
+        char* log_info = marshal_data(seqno, blkpos, optype, ops, opsz); 
+        size_t marshal_len = 2*sizeof(int64_t) + 2*sizeof(int) + opsz + 1;
+
+        send_msg(cnct, log_info, marshal_len);
+
         if (rc)
             goto done;
 
@@ -570,7 +611,7 @@ done:
     return rc;
 }
 
-int sync(cdb2_hndl_tp *from, int64_t maxfrom, cdb2_hndl_tp *to, int64_t maxto) {
+int db_sync(cdb2_hndl_tp *from, int64_t maxfrom, cdb2_hndl_tp *to, int64_t maxto) {
     int64_t nops;
 
     for (int64_t seqno = maxto+1; seqno <= maxfrom; seqno++) {
@@ -591,7 +632,7 @@ int apply(char *fromdb, char *todb) {
     int rc;
 
     cdb2_hndl_tp *from, *to;
-    rc = cdb2_open(&from, fromdb, "default", 0);
+    rc = cdb2_open(&from, fromdb, "local", 0);
     if (rc) {
         fprintf(stderr, "can't open %s\n", fromdb);
         return 1;
@@ -601,10 +642,30 @@ int apply(char *fromdb, char *todb) {
         fprintf(stderr, "can't open %s\n", todb);
         return 1;
     }
-    maxfrom = query_int(from, "select max(seqno) from comdb2_oplog");
-    maxto = query_int(to, "select max(seqno) from comdb2_oplog");
-    // printf("from %lld to %lld\n", (long long) maxfrom, (long long) maxto);
-    return sync(from, maxfrom, to, maxto);
+
+    struct timespec wait_spec;
+    struct timespec remain_spec;
+    wait_spec.tv_sec = 1;
+    wait_spec.tv_nsec = 0;
+
+    cnct = setup_connection("localhost:9092", "test");
+
+    while (run) {
+        maxfrom = query_int(from, "select max(seqno) from comdb2_oplog");
+        maxto = query_int(to, "select max(seqno) from comdb2_oplog");
+        printf("from %lld to %lld\n", (long long) maxfrom, (long long) maxto);
+
+        if (db_sync(from, maxfrom, to, maxto) != 0) {
+            fprintf(stderr, "Couldn't db_sync");
+
+        }
+
+        fprintf(stderr, "I slep for 1/2 sec\n");
+        nanosleep(&wait_spec, &remain_spec);
+
+    }
+
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -619,6 +680,9 @@ int main(int argc, char *argv[]) {
     }
     fromdb = argv[1];
     todb = argv[2];
+
+    /* Signal handler for clean shutdown */
+    signal(SIGINT, stop);
 
     return apply(fromdb, todb);
 }

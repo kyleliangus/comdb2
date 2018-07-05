@@ -518,8 +518,8 @@ usage:
     struct Rcv_Connection* sscribe = setup_subscribe(brokers, topics, group);
 
     while (run) {
-        char msg[512];
-        rcv_msg(sscribe, msg, 512);
+        struct Message msg = rcv_msg(sscribe);
+        delete_message(msg);
     }
 
     close_subscribe(sscribe);

@@ -4,6 +4,7 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/comdb2rle
   ${PROJECT_SOURCE_DIR}/datetime
   ${PROJECT_SOURCE_DIR}/mem
+  ${PROJECT_SOURCE_DIR}/msgbroker
   ${SQLITE3_INCLUDE_DIR}
 )
 
@@ -11,6 +12,8 @@ macro(add_exe exe)
     add_executable(${exe} ${ARGN})
     list(APPEND test-tools ${exe})
 endmacro()
+
+file(GLOB MSG_BROKER_SOURCE RELATIVE "${PROJECT_SOURCE_DIR}/msgbroker" "send_utils.c")
 
 add_exe(blob blob.c)
 add_exe(bound bound.cpp)
@@ -23,7 +26,7 @@ add_exe(crle crle.c)
 add_exe(hatest hatest.c)
 add_exe(insert_lots_mt insert_lots_mt.cpp)
 add_exe(leakcheck leakcheck.c)
-add_exe(localrep localrep.c strbuf.c)
+add_exe(localrep localrep.c strbuf.c ${PROJECT_SOURCE_DIR}/msgbroker/send_utils.c)
 add_exe(overflow_blobtest overflow_blobtest.c)
 add_exe(ptrantest ptrantest.c)
 add_exe(recom recom.c)
@@ -69,6 +72,8 @@ target_link_libraries(recom cdb2api ${OPENSSL_LIBRARIES} ${PROTOBUF_C_LIBRARY} $
 
 # everything!
 target_link_libraries(stepper cdb2api mem dlmalloc util ${OPENSSL_LIBRARIES} ${PROTOBUF_C_LIBRARY} ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS})
+
+target_link_libraries(localrep -lrdkafka -lz -lpthread -lrt -g)
 
 foreach(executable blob bound cdb2api_caller cdb2bind comdb2_blobtest insert_lots_mt leakcheck localrep overflow_blobtest selectv serial sicountbug sirace simple_ssl utf8 insert register breakloop cdb2_client hatest comdb2_sqltest ptrantest recom stepper multithd cdb2_open verify_atomics_work cdb2api_unit malloc_resize_test cdb2_close_early cdb2api_read_intrans_results ssl_multi_certs_one_process)
     target_link_libraries(${executable} ${UNWIND_LIBRARY})

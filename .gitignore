@@ -82,3 +82,8 @@ contrib/docker/volumes
 
 #cscope files
 cscope.*
+
+# testers for modularization
+msgbroker/consumer
+msgbroker/producer
+msgbroker/test/test

@@ -137,6 +137,7 @@ static char* msg_consume (rd_kafka_message_t *rkmessage) {
         if (rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_PARTITION ||
                 rkmessage->err == RD_KAFKA_RESP_ERR__UNKNOWN_TOPIC)
             fprintf(stderr, "Unknown partition or topic\n");
+
         return NULL;
     }
 
@@ -260,28 +261,29 @@ struct Rcv_Connection* setup_subscribe(const char* brokers,
     return retCnct;
 }
 
-size_t rcv_msg(struct Rcv_Connection* cnct, char* buff, size_t buff_len)
+struct Message rcv_msg(struct Rcv_Connection* cnct)
 {
     rd_kafka_t* rk = cnct->rk;
 
     rd_kafka_message_t *rkmessage;
-    memset(buff, '\0', buff_len);
-    size_t msg_len = 0;
 
+    struct Message msg;
+    msg.buff = NULL;
+    msg.len = 0;
+    
     rkmessage = rd_kafka_consumer_poll(rk, 1000);
     if (rkmessage) {
-        char* msg = msg_consume(rkmessage);
-        if (msg) {
-            msg_len = strnlen(msg, buff_len - 1);
-            memcpy(buff, msg, msg_len);
-        }
-        else {
-            msg_len = 0;
+        char* msg_buff = msg_consume(rkmessage);
+        if (msg_buff) {
+            msg.len = rkmessage->len;
+            msg.buff = malloc(msg.len);
+
+            memcpy(msg.buff, msg_buff, msg.len);
         }
         rd_kafka_message_destroy(rkmessage);
     }
 
-    return msg_len;
+    return msg;
 }
 
 /* Acts as a destructor for Rcv_Connection */
@@ -311,4 +313,9 @@ void close_subscribe(struct Rcv_Connection* cnct)
         rd_kafka_dump(stdout, rk);
 
     free(cnct->group);
+}
+
+void delete_message(struct Message msg)
+{
+    free(msg.buff);
 }
