@@ -195,7 +195,7 @@ void close_connection(struct Send_Connection* cnct)
     //rd_kafka_flush(rk, 10*1000 /* wait for max 10 seconds */);
 
     while (rd_kafka_outq_len(rk) > 0)
-         rd_kafka_poll(rk, 50); 
+        rd_kafka_poll(rk, 50); 
 
     /* Destroy topic object */
     rd_kafka_topic_destroy(rkt);

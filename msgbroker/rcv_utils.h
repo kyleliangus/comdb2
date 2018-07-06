@@ -17,7 +17,7 @@ struct Message {
 
 /* Acts as a constructor for Rcv_Connection */
 struct Rcv_Connection* setup_subscribe(const char* brokers, 
-        rd_kafka_topic_partition_list_t* topic, const char* group);
+        const char* topic, const char* group);
 
 /* Is a nonblocking receive */
 struct Message rcv_msg(struct Rcv_Connection* cnct);

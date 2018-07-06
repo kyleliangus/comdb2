@@ -157,7 +157,7 @@ static char* msg_consume (rd_kafka_message_t *rkmessage) {
 
 
 struct Rcv_Connection* setup_subscribe(const char* brokers, 
-        rd_kafka_topic_partition_list_t* topics, const char* group)
+        const char* topic, const char* group)
 {
     rd_kafka_conf_t* conf;
     rd_kafka_topic_conf_t* topic_conf;
@@ -241,6 +241,9 @@ struct Rcv_Connection* setup_subscribe(const char* brokers,
     rd_kafka_poll_set_consumer(rk);
 
     /* TODO: implement offsets if necessary */
+    rd_kafka_topic_partition_list_t* topics = rd_kafka_topic_partition_list_new(1);
+
+    rd_kafka_topic_partition_list_add(topics, topic, 1);
     fprintf(stderr, "%% Subscribing to %d topics\n", topics->cnt);
 
     if ((err = rd_kafka_subscribe(rk, topics))) {

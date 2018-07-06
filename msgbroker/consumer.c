@@ -498,6 +498,7 @@ usage:
 
     topics = rd_kafka_topic_partition_list_new(argc - optind);
     is_subscription = 1;
+    char* topic = argv[optind];
     for (i = optind ; i < argc ; i++) {
         /* Parse "topic[:part] */
         char *topic = argv[i];
@@ -515,7 +516,7 @@ usage:
     }
 
 
-    struct Rcv_Connection* sscribe = setup_subscribe(brokers, topics, group);
+    struct Rcv_Connection* sscribe = setup_subscribe(brokers, topic, group);
 
     while (run) {
         struct Message msg = rcv_msg(sscribe);
