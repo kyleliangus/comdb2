@@ -26,7 +26,10 @@ add_exe(crle crle.c)
 add_exe(hatest hatest.c)
 add_exe(insert_lots_mt insert_lots_mt.cpp)
 add_exe(leakcheck leakcheck.c)
-add_exe(localrep localrep.c strbuf.c ${PROJECT_SOURCE_DIR}/msgbroker/send_utils.c)
+add_exe(localrep localrep.c strbuf.c
+    ${PROJECT_SOURCE_DIR}/msgbroker/send_utils.c
+    ${PROJECT_SOURCE_DIR}/msgbroker/rcv_utils.c
+)
 add_exe(overflow_blobtest overflow_blobtest.c)
 add_exe(ptrantest ptrantest.c)
 add_exe(recom recom.c)

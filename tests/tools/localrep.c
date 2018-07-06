@@ -12,16 +12,50 @@
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
-#include "send_utils.h"
+#include <send_utils.h>
+#include <rcv_utils.h>
 #include "strbuf.h"
 
 int db_sync(cdb2_hndl_tp *from, int64_t maxfrom, cdb2_hndl_tp *to, int64_t maxto);
+void hexdump(void *pp, int len); 
 
 static int run = 1;
-static struct Send_Connection* cnct;
+static int ismaster = 0;
+static struct Send_Connection* send_cnct;
+static char* repname;
+static int hadcommit = 1;
 
 static void stop (int sig) {
     run = 0;
+}
+
+static struct OplogData {
+    int64_t seqno;
+    int64_t blkpos;
+    int optype;
+    int opsz;
+    void* ops;
+} OplogData;
+
+static struct OplogData unmarshal_data(struct Message msg) {
+    struct OplogData data;
+
+    char* blkpos_ptr = msg.buff + sizeof(int64_t);
+    char* optype_ptr = msg.buff + 2*sizeof(int64_t);
+    char* opsz_ptr = optype_ptr + sizeof(int);
+    char* ops_ptr = opsz_ptr + sizeof(int);
+
+    memcpy(&data.seqno, msg.buff, sizeof(data.seqno));
+    memcpy(&data.blkpos, blkpos_ptr, sizeof(data.blkpos));
+    memcpy(&data.optype, optype_ptr, sizeof(data.optype));
+    memcpy(&data.opsz, opsz_ptr, sizeof(data.opsz));
+
+    if (data.opsz > 0)
+        data.ops = ops_ptr;
+    else
+        data.ops = NULL;
+
+    return data;
 }
 
 static char* marshal_data(int64_t seqno, int64_t blkpos, int optype, void* ops, int opsz) {
@@ -520,19 +554,20 @@ int apply_op(cdb2_hndl_tp *db, int64_t seqno, int64_t blkpos, int64_t type, void
 
     switch (type) {
         case LCL_OP_ADD:
-            rc = apply_add(db, ops, opsz);
+            rc = apply_add(db, opscpy, opsz);
             break;
         case LCL_OP_DEL:
-            rc = apply_del(db, ops, opsz);
+            rc = apply_del(db, opscpy, opsz);
             break;
         case LCL_OP_COMMIT:
+            hadcommit = 1;
             rc = cdb2_run_statement(db, "commit");
             if (rc)
                 fprintf(stderr, "commit seqno %lld rc %d %s\n", seqno, rc, cdb2_errstr(db));
             break;
         /* TODO: others! */
         case LCL_OP_CLEAR:
-            rc = apply_clear(db, ops, opsz);
+            rc = apply_clear(db, opscpy, opsz);
             if (rc)
                 fprintf(stderr, "apply_clear seqno %lld rc %d %s\n", seqno, rc,
                         cdb2_errstr(db));
@@ -590,7 +625,8 @@ int apply_seqno(cdb2_hndl_tp *from, cdb2_hndl_tp *to, int64_t seqno, int maxblkp
         char* log_info = marshal_data(seqno, blkpos, optype, ops, opsz); 
         size_t marshal_len = 2*sizeof(int64_t) + 2*sizeof(int) + opsz + 1;
 
-        send_msg(cnct, log_info, marshal_len);
+        send_msg(send_cnct, log_info, marshal_len);
+        free(log_info);
 
         if (rc)
             goto done;
@@ -648,21 +684,74 @@ int apply(char *fromdb, char *todb) {
     wait_spec.tv_sec = 1;
     wait_spec.tv_nsec = 0;
 
-    cnct = setup_connection("localhost:9092", "test");
 
-    while (run) {
-        maxfrom = query_int(from, "select max(seqno) from comdb2_oplog");
-        maxto = query_int(to, "select max(seqno) from comdb2_oplog");
-        printf("from %lld to %lld\n", (long long) maxfrom, (long long) maxto);
+    // master replicant is sender
+    if (ismaster) {
+        send_cnct = setup_connection("localhost:9092", "test");
 
-        if (db_sync(from, maxfrom, to, maxto) != 0) {
-            fprintf(stderr, "Couldn't db_sync");
+        while (run) {
+            maxfrom = query_int(from, "select max(seqno) from comdb2_oplog");
+            maxto = query_int(to, "select max(seqno) from comdb2_oplog");
+            printf("from %lld to %lld\n", (long long) maxfrom, (long long) maxto);
+
+            if (db_sync(from, maxfrom, to, maxto) != 0) {
+                fprintf(stderr, "Couldn't db_sync");
+
+            }
+
+            fprintf(stderr, "I slep for 1 sec\n");
+            nanosleep(&wait_spec, &remain_spec);
 
         }
+        close_connection(send_cnct);
+    }
+    else {
+        struct Rcv_Connection* rcv_cnct = 
+            setup_subscribe("localhost:9092", "test", repname); 
 
-        fprintf(stderr, "I slep for 1/2 sec\n");
-        nanosleep(&wait_spec, &remain_spec);
+        /* setup a state machine here */
+        int64_t curr_seqno = 0;
+        int rc;
+        while (run) {
+            struct Message msg = rcv_msg(rcv_cnct);
 
+            if (msg.buff) {
+                struct OplogData data = unmarshal_data(msg);
+
+                // started a new transaction
+                if (curr_seqno != data.seqno) {
+
+                    // may need to rollback if commit wasn't seen
+                    if (!hadcommit) {
+                        int arc = cdb2_run_statement(to, "rollback");
+                        printf("do a rollback\n");
+                        if (arc) {
+                            fprintf(stderr, "rollback failed for rep seqno %lld: %d %s\n", data.seqno, arc, cdb2_errstr(to));
+                        }
+                    }
+
+                    rc = cdb2_run_statement(to, "begin");
+                    if (rc) {
+                        fprintf(stderr, "begin failed for rep seqno %lld: %d %s\n", 
+                                data.seqno, rc, cdb2_errstr(to));
+                    }
+
+                    hadcommit = 0;
+
+                    curr_seqno = data.seqno;
+
+                }
+                printf("Applying oplog to db\n");
+                rc = apply_op(to, data.seqno, data.blkpos, 
+                        data.optype, data.ops, data.opsz);
+
+            }
+
+            delete_message(msg);
+            fprintf(stderr, "I slep for 1 sec\n");
+            nanosleep(&wait_spec, &remain_spec);
+        }
+        close_subscribe(rcv_cnct);
     }
 
     return 0;
@@ -674,12 +763,18 @@ int main(int argc, char *argv[]) {
     if (getenv("CDB2_CONFIG"))
         cdb2_set_comdb2db_config(getenv("CDB2_CONFIG"));
 
-    if (argc != 3) {
-        fprintf(stderr, "usage: fromdb todb\n");
+    if (argc != 4) {
+        fprintf(stderr, "usage: fromdb todb replicant_name\n");
         return 1;
     }
     fromdb = argv[1];
     todb = argv[2];
+    repname = argv[3];
+
+    if (strcmp(repname, "master") == 0) {
+        ismaster = 1;
+        printf("I AM MASTER REP\n");
+    }
 
     /* Signal handler for clean shutdown */
     signal(SIGINT, stop);
