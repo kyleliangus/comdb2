@@ -713,7 +713,7 @@ int apply(char *fromdb, char *todb) {
         int64_t curr_seqno = 0;
         int rc;
         while (run) {
-            struct Message msg = rcv_msg(rcv_cnct);
+            struct Message msg = rcv_msg(rcv_cnct, 1000);
 
             if (msg.buff) {
                 struct OplogData data = unmarshal_data(msg);

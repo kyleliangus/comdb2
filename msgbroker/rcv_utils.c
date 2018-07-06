@@ -264,7 +264,7 @@ struct Rcv_Connection* setup_subscribe(const char* brokers,
     return retCnct;
 }
 
-struct Message rcv_msg(struct Rcv_Connection* cnct)
+struct Message rcv_msg(struct Rcv_Connection* cnct, int timeout)
 {
     rd_kafka_t* rk = cnct->rk;
 
@@ -274,7 +274,7 @@ struct Message rcv_msg(struct Rcv_Connection* cnct)
     msg.buff = NULL;
     msg.len = 0;
     
-    rkmessage = rd_kafka_consumer_poll(rk, 1000);
+    rkmessage = rd_kafka_consumer_poll(rk, timeout);
     if (rkmessage) {
         char* msg_buff = msg_consume(rkmessage);
         if (msg_buff) {

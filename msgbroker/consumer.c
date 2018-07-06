@@ -519,7 +519,7 @@ usage:
     struct Rcv_Connection* sscribe = setup_subscribe(brokers, topic, group);
 
     while (run) {
-        struct Message msg = rcv_msg(sscribe);
+        struct Message msg = rcv_msg(sscribe, 1000);
         delete_message(msg);
     }
 
