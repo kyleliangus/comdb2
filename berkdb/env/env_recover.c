@@ -344,6 +344,7 @@ err:
  * PUBLIC: int __db_find_recovery_start __P((DB_ENV*, DB_LSN*));
  *
  **/
+#define FIND_RECOVERY_START_TRACE
 static int
 __db_find_recovery_start_int(dbenv, outlsn, max_lsn)
 	DB_ENV *dbenv;
@@ -368,10 +369,14 @@ __db_find_recovery_start_int(dbenv, outlsn, max_lsn)
 	if ((ret = __checkpoint_get(dbenv, &lsn)) != 0 &&
 	    (ret = __txn_getckp(dbenv, &lsn)) != 0) {
 		ret = DB_NOTFOUND;
+        printf("%d\n", __LINE__);
 		goto err;
 	}
-	if ((ret = __log_cursor(dbenv, &logc)) != 0)
+    if ((ret = __log_cursor(dbenv, &logc)) != 0) {
+
+        printf("%d\n", __LINE__);
 		goto err;
+    }
 
 	prev_lsn = lsn;
 	do {
@@ -381,6 +386,7 @@ __db_find_recovery_start_int(dbenv, outlsn, max_lsn)
 		}
 		if ((ret = __log_c_get(logc, &lsn, &rec, DB_SET)) != 0 ||
 		    (ret = __txn_ckp_read(dbenv, rec.data, &ckp_args)) != 0) {
+            printf("%d\n", __LINE__);
 			goto err;
 		}
 #if defined FIND_RECOVERY_START_TRACE
@@ -406,7 +412,11 @@ __db_find_recovery_start_int(dbenv, outlsn, max_lsn)
 		}
 		if ((ret = __log_c_get(logc, &lsn, &rec, DB_SET)) != 0 ||
 		    (ret = __txn_ckp_read(dbenv, rec.data, &ckp_args)) != 0)
+        {
+
+            printf("%d\n", __LINE__);
 			goto err;
+        }
 #if defined FIND_RECOVERY_START_TRACE
 		fprintf(stderr,
 		    "%s: ckp_lsn search: found [%d][%d] searching for the first "
@@ -427,13 +437,22 @@ __db_find_recovery_start_int(dbenv, outlsn, max_lsn)
 
 	ret = __log_c_get(logc, &lsn, &rec, DB_SET);
 	if (ret)
+    {
+
+            printf("%d\n", __LINE__);
+            printf("LSN: %d,%d\n", lsn.file, lsn.offset);
 		goto err;
+    }
 
 	LOGCOPY_32(&rectype, rec.data);
 	if (rectype == DB___db_debug) {
 		ret = __db_debug_read(dbenv, rec.data, &debug_args);
 		if (ret)
-			goto err;
+        {
+
+            printf("%d\n", __LINE__);
+            goto err;
+        }
 		LOGCOPY_32(&optype, debug_args->op.data);
 	}
 	while (rectype != DB___db_debug || optype != 2) {
@@ -472,7 +491,11 @@ __db_find_recovery_start_int(dbenv, outlsn, max_lsn)
 			 * last trusted checkpoint */
 			ret = __checkpoint_get_recovery_lsn(dbenv, &lsn);
 			if (ret)
-				goto err;
+            {
+
+                printf("%d\n", __LINE__);
+                goto err;
+            }
 		}
 	}
 
@@ -1240,14 +1263,19 @@ done:
 		}
 
 		/* Save the checkpoint. */
-		if ((ret =
-			__checkpoint_save(dbenv, &last_valid_checkpoint,
-			    1)) != 0) {
-			__db_err(dbenv, "can't save checkpoint %u:%u",
-			    last_valid_checkpoint.file,
-			    last_valid_checkpoint.offset);
-			goto err;
-		}
+
+        if (!gbl_is_physical_replicant)
+        {
+            if ((ret =
+                __checkpoint_save(dbenv, &last_valid_checkpoint,
+                    1)) != 0) {
+                __db_err(dbenv, "can't save checkpoint %u:%u",
+                    last_valid_checkpoint.file,
+                    last_valid_checkpoint.offset);
+                goto err;
+            }
+
+        }
 
 		logmsg(LOGMSG_WARN, "TRUNCATING to %u:%u checkpoint lsn is %u:%u\n",
 		    max_lsn->file, max_lsn->offset,

@@ -540,6 +540,48 @@ void parse_lrl_file(const std::string& lrlpath,
     }
 }
 
+void create_lrl_file(const std::string& lrlpath,
+        std::string repl_name,
+        std::string master_name,
+        std::string repl_from_hostnames)
+{
+    // First, load the lrl file into memory.
+    std::ifstream lrlstream(lrlpath.c_str());
+    std::ofstream phys_lrl((lrlpath + repl_name).c_str(), std::ofstream::out);
+    if(!lrlstream.is_open()) {
+        throw LRLError(lrlpath, 0, "cannot open file");
+    }
+    int lineno = 0;
+    while(!lrlstream.eof()) {
+        std::string line;
+        std::getline(lrlstream, line);
+        lineno++;
+
+        // Parse the line that we just read.  First strip off comments.
+        size_t pos = line.find_first_of('#');
+        if(pos != std::string::npos) {
+            line.resize(pos);
+        }
+        std::istringstream liness(line);
+
+        std::string tok;
+        if(liness >> tok) {
+
+            if(tok == "name") {
+                if(!(liness >> tok)) {
+                    throw LRLError(lrlpath, lineno, "missing database name");
+                }
+
+            }
+            else 
+            {
+                phys_lrl << line << "\n";
+            }
+        }
+
+    }
+}
+
 std::string generate_fingerprint(void) 
 {
     unsigned char obuf[20];
@@ -559,6 +601,8 @@ std::string generate_fingerprint(void)
 
 void serialise_database(
   std::string lrlpath,
+  std::string repl_from_hostnames,
+  std::string repl_name,
   const std::string& comdb2_task,
   bool disable_log_deletion,
   bool strip_cluster_info,
@@ -567,6 +611,7 @@ void serialise_database(
   bool do_direct_io,
   bool incr_create,
   bool incr_gen,
+  bool copy_physical,
   const std::string& incr_path
 )
 // Serialise a database into tape archive format and write it to stdout.
@@ -608,6 +653,16 @@ void serialise_database(
 
     parse_lrl_file(lrlpath, &dbname, &dbdir, &support_files,
             &table_names, &queue_names, &nonames, &has_cluster_info);
+
+    /* update found parsed info if making a physical replicant */
+    if (copy_physical)
+    {
+        if (repl_from_hostnames.empty())
+        {
+            repl_from_hostnames = dbname;
+        }
+        create_lrl_file(lrlpath, repl_name, dbname, repl_from_hostnames);
+    }
 
     // Ignore lrl names setting if we know better
     if (!dbdir.empty() && !dbname.empty()) {
@@ -1100,6 +1155,7 @@ void serialise_database(
                     makeabs(abspath, lrldir, *it);
                 }
             }
+            std::cerr << "abspath is: " << abspath << "\n\n\n";
             if (islrl && strippedpath != "") {
                 FileInfo fi(FileInfo::SUPPORT_FILE, abspath, dbdir);
                 serialise_file(fi, iom, strippedpath);

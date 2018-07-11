@@ -12,6 +12,8 @@ static cdb2_hndl_tp* repl_db;
 static cdb2_hndl_tp* host_db;
 static char* host_db_name;
 
+static int do_repl;
+
 /* internal implementation */
 typedef struct DB_Connection {
     char *hostname;
@@ -89,6 +91,28 @@ const char* start_replication()
     }
     fprintf(stderr, "Couldn't find any remote dbs to connect to\n");
     return NULL;
+}
+
+void* keep_in_sync(void* args)
+{
+    int rc;
+    //int64_t
+    char* sql_cmd = "select * from comdb2_transaction_logs"; 
+
+    do_repl = 1;
+
+    while(do_repl)
+    {
+        rc = cdb2_run_statement(repl_db, sql_cmd);
+
+    }
+
+    return NULL;
+}
+
+void stop_sync()
+{
+    do_repl = 0;
 }
 
 /* privates */
