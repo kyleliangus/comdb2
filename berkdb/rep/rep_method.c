@@ -59,6 +59,7 @@ static int __rep_start __P((DB_ENV *, DBT *, u_int32_t, u_int32_t));
 static int __rep_stat __P((DB_ENV *, DB_REP_STAT **, u_int32_t));
 static int __rep_wait __P((DB_ENV *, u_int32_t, char **, u_int32_t *, u_int32_t, u_int32_t));
 
+extern int gbl_is_physical_replicant;
 #ifndef TESTSUITE
 void bdb_get_writelock(void *bdb_state,
     const char *idstr, const char *funcname, int line);
@@ -392,12 +393,16 @@ __rep_start(dbenv, dbt, gen, flags)
 		 * Take a transaction checkpoint so that our new generation
 		 * number get written to the log.
 		 */
-		if ((t_ret = __txn_checkpoint(dbenv, 0, 0, DB_FORCE)) != 0 &&
-		    ret == 0)
-			ret = t_ret;
-		if (redo_prepared &&
-		    (t_ret = __rep_restore_prepared(dbenv)) != 0 && ret == 0)
-			ret = t_ret;
+
+        if (!gbl_is_physical_replicant)
+        {
+            if ((t_ret = __txn_checkpoint(dbenv, 0, 0, DB_FORCE)) != 0 &&
+                ret == 0)
+                ret = t_ret;
+            if (redo_prepared &&
+                (t_ret = __rep_restore_prepared(dbenv)) != 0 && ret == 0)
+                ret = t_ret;
+        }
 	} else {
 		init_db = 0;
 		announce = role_chg || rep->master_id == db_eid_invalid;
