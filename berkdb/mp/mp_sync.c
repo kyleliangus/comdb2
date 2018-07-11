@@ -161,6 +161,7 @@ __checkpoint_save(DB_ENV *dbenv, DB_LSN *lsn, int in_recovery)
 	int rc;
 	size_t niop = 0;
 
+
 	LOGCOPY_TOLSN(&ckpt.lsn, lsn);
 
 	/* 2 or more.  Better learn to live with 1!
