@@ -59,6 +59,7 @@ void bdb_get_writelock(void *bdb_state,
 void bdb_rellock(void *bdb_state, const char *funcname, int line);
 int bdb_is_open(void *bdb_state);
 
+extern int gbl_is_physical_replicant;
 
 #define BDB_WRITELOCK(idstr)    bdb_get_writelock(bdb_state, (idstr), __func__, __LINE__)
 #define BDB_RELLOCK()           bdb_rellock(bdb_state, __func__, __LINE__)
@@ -1190,9 +1191,11 @@ __db_apprec(dbenv, max_lsn, trunclsn, update, flags)
 	}
 
 	/* Take a checkpoint here to force any dirty data pages to disk. */
-	if ((ret = __txn_checkpoint(dbenv, 0, 0, DB_FORCE)) != 0)
-		goto err;
-
+    if (!gbl_is_physical_replicant)
+    {
+        if ((ret = __txn_checkpoint(dbenv, 0, 0, DB_FORCE)) != 0)
+            goto err;
+    }
 	/* Close all the db files that are open. */
 	if ((ret = __dbreg_close_files(dbenv)) != 0)
 		goto err;
@@ -1310,9 +1313,12 @@ done:
 		 * If there are no prepared transactions that need resolution,
 		 * we need to reset the transaction ID space and log this fact.
 		 */
-		if ((ret = __txn_reset(dbenv)) != 0)
-			goto err;
+        if (!gbl_is_physical_replicant)
+        {
+            if ((ret = __txn_reset(dbenv)) != 0)
+                goto err;
 
+        }
 	if (FLD_ISSET(dbenv->verbose, DB_VERB_RECOVERY)) {
 		(void)time(&now);
 		__db_err(dbenv, "Recovery complete at %.24s", ctime(&now));

@@ -28,6 +28,7 @@ set(src
   handle_buf.c
   history.c
   llops.c
+  phys_rep.c
   localrep.c
   lrucache.c
   marshal.c

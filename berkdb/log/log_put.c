@@ -46,6 +46,7 @@ static const char revid[] = "$Id: log_put.c,v 11.145 2003/09/13 19:20:39 bostic 
 #include "logmsg.h"
 #include <poll.h>
 
+
 extern unsigned long long get_commit_context(const void *, uint32_t generation);
 extern int bdb_update_startlwm_berk(void *statearg, unsigned long long ltranid,
     DB_LSN *firstlsn);
@@ -77,6 +78,9 @@ int __db_debug_log(DB_ENV *, DB_TXN *, DB_LSN *, u_int32_t, const DBT *,
 extern int gbl_inflate_log;
 pthread_cond_t gbl_logput_cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t gbl_logput_lk = PTHREAD_MUTEX_INITIALIZER;
+
+/* TODO: Delete once finished with testing on local reps */
+extern int gbl_is_physical_replicant;
 
 /*
  * __log_put_pp --
@@ -176,6 +180,14 @@ __log_put_int_int(dbenv, lsnp, contextp, udbt, flags, off_context, usr_ptr)
 		pp = udbt->data;
 		LOGCOPY_32(&rectype, pp);
 	}
+
+    /* prevent local replicant from generating logs */
+    if (gbl_is_physical_replicant)
+    {
+        logmsg(LOGMSG_USER, "I'm a local replicant, stop me!");
+        logmsg(LOGMSG_FATAL, "%s line %d invalid logput for physical replicant\n", __func__, __LINE__);
+        abort();
+    }
 
 	if (!IS_REP_MASTER(dbenv) && !(dblp->flags & DBLOG_RECOVER)) {
 

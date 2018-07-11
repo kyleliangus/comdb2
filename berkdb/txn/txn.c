@@ -90,6 +90,7 @@ int bdb_is_open(void *bdb_state);
 int comdb2_time_epoch(void);
 void ctrace(char *format, ...);
 
+extern int gbl_is_physical_replicant;
 
 #define BDB_WRITELOCK(idstr)    bdb_get_writelock(bdb_state, (idstr), __func__, __LINE__)
 #define BDB_RELLOCK()           bdb_rellock(bdb_state, __func__, __LINE__)
@@ -2494,6 +2495,9 @@ __txn_reset(dbenv)
 {
 	DB_LSN scrap;
 	DB_TXNREGION *region;
+
+    if (gbl_is_physical_replicant)
+        return 0;
 
 	region = ((DB_TXNMGR *)dbenv->tx_handle)->reginfo.primary;
 	region->last_txnid = TXN_MINIMUM;
