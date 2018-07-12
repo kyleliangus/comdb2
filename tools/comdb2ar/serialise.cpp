@@ -581,9 +581,9 @@ void create_lrl_file(std::string& lrlpath,
         if(liness >> tok) {
 
             /* rewrite the name here */
-            if(tok == "cluster nodes") {
+            if(tok == "cluster") {
                 if(!(liness >> tok)) {
-                    throw LRLError(lrlpath, lineno, "missing database name");
+                    throw LRLError(lrlpath, lineno, "Invalid cluster nodes line");
                 }
 
                 /* default if not overridden from cmd */
@@ -592,6 +592,7 @@ void create_lrl_file(std::string& lrlpath,
                     getline(liness, repl_from_hostnames);
                 }
 
+                /* cleave cluster is implied */
                 phys_lrl << "#" << line << std::endl;
             }
             else if(tok == "name") {
