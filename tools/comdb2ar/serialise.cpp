@@ -540,14 +540,27 @@ void parse_lrl_file(const std::string& lrlpath,
     }
 }
 
-void create_lrl_file(const std::string& lrlpath,
+void create_lrl_file(std::string& lrlpath,
         std::string repl_name,
         std::string master_name,
         std::string repl_from_hostnames)
 {
     // First, load the lrl file into memory.
+    // Modify string path to rename it to the replication machine's name
+    size_t parent_dir_loc = lrlpath.find_last_of("/") + 1;
+    if (parent_dir_loc >= lrlpath.size())
+    {
+        std::cerr << "Path doesn't have / inside?" << std::endl;
+    }
+    std::string new_path = lrlpath.substr(0, parent_dir_loc) + repl_name + ".lrl";
+
     std::ifstream lrlstream(lrlpath.c_str());
-    std::ofstream phys_lrl((lrlpath + repl_name).c_str(), std::ofstream::out);
+    std::ofstream phys_lrl(new_path.c_str());
+
+    std::cerr << "orig lrlpath was: " << lrlpath << std::endl;
+    std::cerr << "create_lrl_file here: " << new_path << std::endl;
+    lrlpath = new_path;
+
     if(!lrlstream.is_open()) {
         throw LRLError(lrlpath, 0, "cannot open file");
     }
@@ -567,19 +580,42 @@ void create_lrl_file(const std::string& lrlpath,
         std::string tok;
         if(liness >> tok) {
 
-            if(tok == "name") {
+            /* rewrite the name here */
+            if(tok == "cluster nodes") {
                 if(!(liness >> tok)) {
                     throw LRLError(lrlpath, lineno, "missing database name");
                 }
 
+                /* default if not overridden from cmd */
+                if (repl_from_hostnames.empty())
+                {
+                    getline(liness, repl_from_hostnames);
+                }
+
+                phys_lrl << "#" << line << std::endl;
+            }
+            else if(tok == "name") {
+                if(!(liness >> tok)) {
+                    throw LRLError(lrlpath, lineno, "missing database name");
+                }
+                phys_lrl << "name    " << repl_name << std::endl; 
+
             }
             else 
             {
-                phys_lrl << line << "\n";
+                phys_lrl << line << std::endl;
             }
+
         }
 
     }
+
+    /* still no hosts to replicate from */
+    if (repl_from_hostnames.empty())
+    {
+        repl_from_hostnames = master_name;
+    }
+    phys_lrl << "replicate_from " << repl_name << " " << repl_from_hostnames; 
 }
 
 std::string generate_fingerprint(void) 
@@ -627,6 +663,7 @@ void serialise_database(
     bool has_cluster_info = false;
     std::string origlrlname("");
     std::string strippedpath("");
+    std::string templrlpath("");
 
     // All support files - csc2s, extra lrls, resources for stored procedures
     // etc.
@@ -657,11 +694,8 @@ void serialise_database(
     /* update found parsed info if making a physical replicant */
     if (copy_physical)
     {
-        if (repl_from_hostnames.empty())
-        {
-            repl_from_hostnames = dbname;
-        }
         create_lrl_file(lrlpath, repl_name, dbname, repl_from_hostnames);
+        templrlpath = lrlpath;
     }
 
     // Ignore lrl names setting if we know better
@@ -679,7 +713,8 @@ void serialise_database(
         }
     }
 
-    if (strip_cluster_info && has_cluster_info) {
+    /* Copy physical should ignore this, */
+    if (strip_cluster_info && has_cluster_info && !copy_physical) {
         std::string newlrlpath;
         support_files.clear();
         table_names.clear();
@@ -1334,6 +1369,16 @@ void serialise_database(
     writepadding(2 * 512);
 
     // Success, all done!
+    // Need to delete extraneous lrl file if modified 
+    if (copy_physical)
+    {
+        if (remove(templrlpath.c_str()) != 0)
+        {
+            std::cerr << "Failed to remove physical replicant lrl file at: "
+                << templrlpath << std::endl;
+        }
+
+    }
 }
 
 extern uint32_t myflip(uint32_t in);
