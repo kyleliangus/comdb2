@@ -73,7 +73,7 @@ static void usage()
 
 void errexit(int code)
 // Exits the program with a fatal error.  First it prints a single line
-// "Error" to stderr.  This is important because the utilities that use us
+// "Error" to estderr.  This is important because the utilities that use us
 // (copycomdb2 particularly) invoke us through rsh and don't easily get
 // access to out exit status, so they rely on the error output clearly
 // indicating that an error occured.
@@ -223,7 +223,6 @@ int main(int argc, char *argv[])
 
             case 'E':
                 new_db_name = std::string(optarg);
-                std::cerr << new_db_name << "\n";
                 copy_physical = true;
                 strip_cluster_info = true;
                 break;
