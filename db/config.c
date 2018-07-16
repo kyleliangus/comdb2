@@ -1339,7 +1339,7 @@ static int read_lrl_option(struct dbenv *dbenv, char *line,
             return -1;
         }
         /* setup a host db connection */
-        if (set_host_db(tokdup(tok, ltok))) 
+        if (set_repl_db_name(tokdup(tok, ltok))) 
         {
             logmsg(LOGMSG_ERROR, "Couldn't open a db connection\n");
             return -1;
