@@ -5,9 +5,9 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <phys_rep_lsn.h>
 
 #include "comdb2.h"
-#include <build/db.h>
 #include "phys_rep.h"
 
 /* for replication */
@@ -115,32 +115,46 @@ void* keep_in_sync(void* args)
     int rc;
     struct timespec wait_spec;
     struct timespec remain_spec;
-    char* sql_cmd = "select * from comdb2_transaction_logs"; 
+    char* sql_cmd = "select * from comdb2_transaction_logs('{@file:@offset}')"; 
 
     do_repl = 1;
     wait_spec.tv_sec = 1;
     wait_spec.tv_nsec = 0;
 
+
     while(do_repl)
     {
+        LOG_INFO info = get_last_lsn(thedb->bdb_env);
+
+        cdb2_clearbindings(repl_db);
+        cdb2_bind_param(repl_db, "file", CDB2_INTEGER, &info.file, sizeof(info.file));
+        cdb2_bind_param(repl_db, "offset", CDB2_INTEGER, 
+                &info.offset, sizeof(info.offset));
+
         rc = cdb2_run_statement(repl_db, sql_cmd);
-        // ncols = cdb2_numcolumns(repl_db);
+
+        /* should verify that this is the record we want */
+        if ((rc = cdb2_next_record(repl_db)) != CDB2_OK)
+        {
+            fprintf(stderr, "Can't find the next record");
+        }
+        // TODO: check the record
 
         while((rc = cdb2_next_record(repl_db) == CDB2_OK))
         {
-            /* should have ncols as 5 
+            /* should have ncols as 5 */
             for(col = 0; col < ncols; col++)
             {
                 val = cdb2_column_value(repl_db, col); 
                 fprintf(stderr, "%s, type: %d", 
                         cdb2_column_name(repl_db, col),
                         cdb2_column_type(repl_db, col));
-            } */
-            interpret_record();
+            } 
+            handle_record();
 
-            break;
         }
 
+        /* check we finished correctly */
         if (rc == CDB2_OK_DONE)
         {
             fprintf(stdout, "Finished reading from xsaction logs\n");
@@ -150,7 +164,7 @@ void* keep_in_sync(void* args)
             fprintf(stderr, "Had an error %d\n", rc);
         }
 
-        fprintf(stdout, "I sleep for 1 second\n");
+        //fprintf(stdout, "I sleep for 1 second\n");
         nanosleep(&wait_spec, &remain_spec);
     }
 
@@ -170,22 +184,16 @@ void stop_sync()
 }
 
 /* privates */
-static void interpret_record()
+static void handle_record()
 {
     /* vars for 1 record */
     int ncols;
     int col;
     void* blob;
     int blob_len;
-    char* lsn, gen, timestamp;
+    char* lsn, *gen, *timestamp;
     int64_t rectype; 
     int rc;
-
-    /* get db internals */
-    DB_LOGC* logc;
-    DBT logrec;
-    DB_LSN last_log_lsn;
-    bdb_state_type* bdb_state;
 
     lsn = (char *) cdb2_column_value(repl_db, 0);
     rectype = *(int64_t *) cdb2_column_value(repl_db, 1);
@@ -194,27 +202,9 @@ static void interpret_record()
     blob = cdb2_column_value(repl_db, 4);
     blob_len = cdb2_column_size(repl_db, 4);
 
-    bdb_state = thedb->bdb_env;
+    LOG_INFO info = get_last_lsn(thedb->bdb_env);
 
-    rc = bdb_state->dbenv->log_cursor(bdb_state->dbenv, &logc, 0);
-    if (rc) {
-        fprintf(stderr, "%s: can't get log cursor rc %d\n", __func__, rc);
-        return;
-    }
-    bzero(&logrec, sizeof(DBT));
-    logrec.flags = DB_DBT_MALLOC;
-    rc = logc->get(logc, &first_log_lsn, &logrec, DB_LAST);
-    if (rc) {
-        fprintf(stderr, "%s: can't get first log record rc %d\n", __func__,
-                rc);
-        logc->close(logc, 0);
-        return;
-    }
-    if (logrec.data)
-        free(logrec.data);
-    logc->close(logc, 0);
-
-
+    // TODO: implement this to use __rep_apply for one log record
 }
 
 /* data struct implementation */
