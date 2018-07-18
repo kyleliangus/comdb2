@@ -2018,10 +2018,12 @@ struct __db_env {
 
 					/* App-specified alloc functions. */
 	void *(*db_malloc) __P((size_t));
-	void *(*db_realloc) __P((void *, size_t));
-	void (*db_free) __P((void *));
+    void *(*db_realloc) __P((void *, size_t));
+    void (*db_free) __P((void *));
 
-
+    /* expose logging rep_apply */
+    int (*apply_log) __P((DB_ENV *, int, int, int64_t,
+                void*, int));
 	/*
 	 * Currently, the verbose list is a bit field with room for 32
 	 * entries.  There's no reason that it needs to be limited, if

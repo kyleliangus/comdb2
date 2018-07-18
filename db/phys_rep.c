@@ -5,7 +5,9 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdint.h>
-#include <phys_rep_lsn.h>
+
+#include "phys_rep_lsn.h"
+#include "dbinc/rep_types.h"
 
 #include "comdb2.h"
 #include "phys_rep.h"
@@ -168,7 +170,7 @@ void* keep_in_sync(void* args)
         /* check we finished correctly */
         if (rc == CDB2_OK_DONE)
         {
-            fprintf(stdout, "Finished reading from xsaction logs\n");
+            //fprintf(stdout, "Finished reading from xsaction logs\n");
         }
         else
         {
@@ -189,7 +191,7 @@ void stop_sync()
 
     if (pthread_join(sync_thread, NULL)) 
     {
-        fprintf(stderr, "sync thread didn't join back :(");
+        fprintf(stderr, "sync thread didn't join back :(\n");
     }
 
 }
@@ -202,9 +204,10 @@ static void handle_record()
     int col;
     void* blob;
     int blob_len;
-    char* lsn, *gen, *timestamp;
+    char* lsn, *gen, *timestamp, *token;
+    const char delim[2] = ":";
     int64_t rectype; 
-    int rc;
+    int rc, file, offset;
 
     lsn = (char *) cdb2_column_value(repl_db, 0);
     rectype = *(int64_t *) cdb2_column_value(repl_db, 1);
@@ -213,9 +216,44 @@ static void handle_record()
     blob = cdb2_column_value(repl_db, 4);
     blob_len = cdb2_column_size(repl_db, 4);
 
-    fprintf(stdout, "lsn: %s\n", lsn);
+    fprintf(stdout, "lsn: %s", lsn);
+
+    /* TODO: consider using sqlite/ext/comdb2/tranlog.c */
+    token = strtok(lsn, delim);    
+    if (token)
+    {
+        /* assuming it's {#### */
+        file = atoi(token + 1);
+    }
+    else
+    {
+        file = -1;
+    }
+
+    token = strtok(NULL, delim);
+    if (token)
+    {
+        token[strlen(token) - 1] = '\0';
+        offset = atoi(token);
+    }
+    else
+    {
+        offset = -1;
+    }
+    
+    fprintf(stdout, ": %d:%d, rectype: %ld\n", file, offset, rectype);
+    
 
     // TODO: implement this to use __rep_apply for one log record
+    // Change it later
+    rc = apply_log(thedb->bdb_env->dbenv, file, offset, 
+            REP_LOG, blob, blob_len); 
+    rc = 0;
+
+    if (rc != 0)
+    {
+        fprintf(stderr, "Something went wrong with applying the logs\n");
+    }
 }
 
 /* data struct implementation */

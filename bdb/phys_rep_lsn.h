@@ -13,4 +13,7 @@ struct LOG_INFO
 LOG_INFO get_last_lsn(bdb_state_type* bdb_state);
 u_int32_t get_next_lsn(bdb_state_type* bdb_state);
 
+int apply_log(DB_ENV* dbenv, int file, int offset, int64_t rectype, 
+        void* blob, int blob_len);
+
 #endif
