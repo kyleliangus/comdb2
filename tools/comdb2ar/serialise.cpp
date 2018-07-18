@@ -614,9 +614,9 @@ void create_lrl_file(std::string& lrlpath,
     /* still no hosts to replicate from */
     if (repl_from_hostnames.empty())
     {
-        repl_from_hostnames = master_name;
+        repl_from_hostnames = "default";
     }
-    phys_lrl << "replicate_from " << repl_name << " " << repl_from_hostnames; 
+    phys_lrl << "replicate_from " << master_name << " " << repl_from_hostnames; 
 }
 
 std::string generate_fingerprint(void) 

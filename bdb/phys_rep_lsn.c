@@ -49,7 +49,7 @@ LOG_INFO get_last_lsn(bdb_state_type* bdb_state)
     return log_info;
 }
 
-u_int32_t get_last_lsn(bdb_state_type* bdb_state)
+u_int32_t get_next_lsn(bdb_state_type* bdb_state)
 {
     LOG_INFO log_info = get_last_lsn(bdb_state);
 

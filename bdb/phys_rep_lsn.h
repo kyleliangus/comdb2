@@ -11,5 +11,6 @@ struct LOG_INFO
 };
 
 LOG_INFO get_last_lsn(bdb_state_type* bdb_state);
+u_int32_t get_next_lsn(bdb_state_type* bdb_state);
 
 #endif
