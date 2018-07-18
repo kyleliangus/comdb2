@@ -30,13 +30,14 @@ static int idx = 0;
 static DB_Connection* get_connect(char* hostname);
 static int insert_connect(char* hostname);
 static void delete_connect(DB_Connection* cnct);
-static void interpret_record();
+static void handle_record();
 
 static pthread_t sync_thread;
 /* internal implementation */
 
 /* externs here */
 extern struct dbenv* thedb;
+extern int sc_ready(void);
 
 /* external API */
 int set_repl_db_name(char* name)
@@ -92,7 +93,9 @@ const char* start_replication()
         if ((rc = cdb2_open(&repl_db, repl_db_name, 
                         cnct->hostname, CDB2_DIRECT_CPU)) == 0)
         {
-            fprintf(stdout, "Attached to %s for replication\n", cnct->hostname);
+            fprintf(stdout, "Attached to %s and db %s for replication\n", 
+                    cnct->hostname,
+                    repl_db_name);
             if (pthread_create(&sync_thread, NULL, keep_in_sync, NULL))
             {
                 fprintf(stderr, "Couldn't create thread to sync\n");
@@ -115,41 +118,49 @@ void* keep_in_sync(void* args)
     int rc;
     struct timespec wait_spec;
     struct timespec remain_spec;
-    char* sql_cmd = "select * from comdb2_transaction_logs('{@file:@offset}')"; 
+    // char* sql_cmd = "select * from comdb2_transaction_logs('{@file:@offset}')"; 
+    size_t sql_cmd_len = 100;
+    char sql_cmd[sql_cmd_len];
+
 
     do_repl = 1;
     wait_spec.tv_sec = 1;
     wait_spec.tv_nsec = 0;
 
+    /* cannot call get_last_lsn if thedb is not ready */
+    while (!sc_ready())
+        nanosleep(&wait_spec, &remain_spec);
 
     while(do_repl)
     {
         LOG_INFO info = get_last_lsn(thedb->bdb_env);
 
-        cdb2_clearbindings(repl_db);
-        cdb2_bind_param(repl_db, "file", CDB2_INTEGER, &info.file, sizeof(info.file));
-        cdb2_bind_param(repl_db, "offset", CDB2_INTEGER, 
-                &info.offset, sizeof(info.offset));
+        rc = snprintf(sql_cmd, sql_cmd_len, 
+                "select * from comdb2_transaction_logs('{%u:%u}')", 
+                info.file, info.offset);
+        if (rc < 0 || rc >= sql_cmd_len)
+            fprintf(stderr, "sql_cmd buffer is not long enough!\n");
 
         rc = cdb2_run_statement(repl_db, sql_cmd);
 
         /* should verify that this is the record we want */
         if ((rc = cdb2_next_record(repl_db)) != CDB2_OK)
         {
-            fprintf(stderr, "Can't find the next record");
+            fprintf(stderr, "Can't find the next record\n");
         }
         // TODO: check the record
 
-        while((rc = cdb2_next_record(repl_db) == CDB2_OK))
+        while((rc = cdb2_next_record(repl_db)) == CDB2_OK)
         {
-            /* should have ncols as 5 */
-            for(col = 0; col < ncols; col++)
+            /* should have ncols as 5 
+            for(col = 0; col < 5; col++)
             {
                 val = cdb2_column_value(repl_db, col); 
                 fprintf(stderr, "%s, type: %d", 
                         cdb2_column_name(repl_db, col),
                         cdb2_column_type(repl_db, col));
-            } 
+            } */
+
             handle_record();
 
         }
@@ -202,7 +213,7 @@ static void handle_record()
     blob = cdb2_column_value(repl_db, 4);
     blob_len = cdb2_column_size(repl_db, 4);
 
-    LOG_INFO info = get_last_lsn(thedb->bdb_env);
+    fprintf(stdout, "lsn: %s\n", lsn);
 
     // TODO: implement this to use __rep_apply for one log record
 }
