@@ -436,6 +436,9 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 	/* If we don't have a dispatch table, it's hard to dispatch. */
 	DB_ASSERT(dtab != NULL);
 
+
+    logmsg(LOGMSG_WARN, "I'm in db_dispatch line: %u \n", __LINE__);
+
 	/*
 	 * If we find a record that is in the user's number space and they
 	 * have specified a recovery routine, let them handle it.  If they
@@ -642,6 +645,7 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 	 */
 	ret = 0;
 
+    
 	if (make_call) {
 		/*
 		 * If the debug flag is set then we are logging
@@ -662,7 +666,11 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 			}
 		}
 		if (rectype >= DB_user_BEGIN && dbenv->app_dispatch != NULL)
+        {
+
+            logmsg(LOGMSG_WARN, "Did i really get here: %u \n", __LINE__);
 			return (dbenv->app_dispatch(dbenv, db, lsnp, redo));
+        }
 		else {
 			/*
 			 * The size of the dtab table argument is the same as
@@ -676,6 +684,8 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 				return (EINVAL);
 			}
 			/* let's do this only on the replicants, for now */
+            logmsg(LOGMSG_WARN, "Did i really get here: %u \n", __LINE__);
+            logmsg(LOGMSG_WARN, "What is this? %d\n", rectype);
 			return (dtab[rectype](dbenv, db, lsnp, redo, info));
 		}
 	}

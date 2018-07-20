@@ -3648,17 +3648,22 @@ gap_check:		max_lsn_dbtp = NULL;
 					    __rep_process_txn_concurrent(dbenv,
 					    rp, rec, &ltrans, rp->lsn, max_lsn,
 					    commit_gen, dbenv->prev_commit_lsn);
+                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
                 } else {
 					ret =
 					    __rep_process_txn(dbenv, rp, rec,
 					    &ltrans, max_lsn, commit_gen);
+                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
                 }
+
+                fprintf(stderr, "ret is ded here: %d\n", ret);
 
 				/* Always release locks in order.  This is probably too conservative. */
 				if (0 == ret)
 					dbenv->prev_commit_lsn = max_lsn;
 
 				if (ret == DB_LOCK_DEADLOCK) {
+                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
 					rep->stat.retry++;
 					num_retries++;
 					if (num_retries > rep->stat.max_replication_trans_retries)
@@ -3677,6 +3682,7 @@ gap_check:		max_lsn_dbtp = NULL;
 						dbenv->replicant_use_minwrite_noread = 1;
 
 					if (ret == DB_LOCK_DEADLOCK_CUSTOM) {
+                        logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
 						ret = DB_LOCK_DEADLOCK;
 						goto err;
 					}
@@ -3691,7 +3697,10 @@ gap_check:		max_lsn_dbtp = NULL;
 		}
 		/* Now flush the log unless we're running TXN_NOSYNC. */
 		if (ret == 0 && !F_ISSET(dbenv, DB_ENV_TXN_NOSYNC))
+        {
+            logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
 			ret = __log_flush(dbenv, NULL);
+        }
 		if (ret != 0) {
 			__db_err(dbenv, "Error processing txn [%lu][%lu]",
 			    (u_long)rp->lsn.file, (u_long)rp->lsn.offset);
@@ -4908,7 +4917,8 @@ __rep_process_txn(dbenv, rctl, rec, ltrans, maxlsn, commit_gen)
 {
 	static int lastpr = 0;
 	int now;
-	if (!gbl_rep_process_txn_time) {
+	if (!gbl_rep_process_txn_time) { 
+        logmsg(LOGMSG_WARN, "I'm in rep_process_txn: %u \n", __LINE__);
 		return __rep_process_txn_int(dbenv, rctl, rec, ltrans, maxlsn,
 		    commit_gen, 0, NULL, NULL);
 	} else {
