@@ -3809,7 +3809,7 @@ int __dbenv_apply_log(DB_ENV* dbenv, int file, int offset, int64_t rectype,
 
     REP_CONTROL rp;
 
-    DBT rec;
+    DBT rec = {0};
     DB_LSN ret_lsnp;
     uint32_t *commit_gen;
     int rc, decoupled;

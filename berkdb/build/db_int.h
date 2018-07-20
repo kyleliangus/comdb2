@@ -470,6 +470,7 @@ struct __vrfy_pageinfo; typedef struct __vrfy_pageinfo VRFY_PAGEINFO;
 #include "dbinc/qam.h"
 #include "dbinc/hmac.h"
 
+extern int gbl_is_physical_replicant;
 /*******************************************************
  * Remaining Log.
  * These need to be defined after the general includes
@@ -482,7 +483,7 @@ struct __vrfy_pageinfo; typedef struct __vrfy_pageinfo VRFY_PAGEINFO;
  */
 #define	DBENV_LOGGING(dbenv)						\
 	(LOGGING_ON(dbenv) && !IS_REP_CLIENT(dbenv) &&			\
-	    (!IS_RECOVERING(dbenv)))
+	    (!IS_RECOVERING(dbenv)) && !gbl_is_physical_replicant)
 
 /*
  * Test if we need to log a change.  By default, we don't log operations without

@@ -38,13 +38,17 @@
 /*
  * Standard initialization and shutdown macros for all recovery functions.
  */
+#include <logmsg.h>
 #define	REC_INTRO(func, inc_count) do {					\
 	argp = NULL;							\
 	dbc = NULL;							\
 	file_dbp = NULL;						\
 	mpf = NULL;							\
 	if ((ret = func(dbenv, dbtp->data, &argp)) != 0)		\
+    { \
+        logmsg(LOGMSG_ERROR, "addrem recover func failed at %d\n", __LINE__); \
 		goto out;						\
+    } \
 	if ((ret = __dbreg_id_to_db(dbenv, argp->txnid,			\
 	    &file_dbp, argp->fileid, inc_count, lsnp, 0)) != 0) { 		\
 		if (ret	== DB_DELETED) {				\
@@ -54,7 +58,10 @@
 		goto out;						\
 	}								\
 	if ((ret = __db_cursor(file_dbp, NULL, &dbc, 0)) != 0)		\
+    { \
+        logmsg(LOGMSG_ERROR, "addrem recover cursor failed at %d\n", __LINE__); \
 		goto out;						\
+    } \
 	F_SET(dbc, DBC_RECOVER);					\
 	mpf = file_dbp->mpf;						\
 } while (0)
