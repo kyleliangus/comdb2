@@ -90,5 +90,4 @@ int apply_log(DB_ENV* dbenv, int file, int offset, int64_t rectype,
     dbenv->apply_log(args..);
     */
     return __dbenv_apply_log(dbenv, file, offset, rectype, blob, blob_len);
-    // return 0;
 }
