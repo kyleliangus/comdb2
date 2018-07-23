@@ -502,11 +502,15 @@ extern int gbl_is_physical_replicant;
 #if defined(DIAGNOSTIC) || defined(DEBUG_ROP)  || defined(DEBUG_WOP)
 #define	DBC_LOGGING(dbc)						\
 	(LOGGING_ON((dbc)->dbp->dbenv) &&				\
-	    !F_ISSET((dbc), DBC_RECOVER) && !IS_REP_CLIENT((dbc)->dbp->dbenv))
+	    !F_ISSET((dbc), DBC_RECOVER) &&  \
+     !IS_REP_CLIENT((dbc)->dbp->dbenv) &&  \
+        !gbl_is_physical_replicant)
 #else
 #define	DBC_LOGGING(dbc)						\
 	((dbc)->txn != NULL && LOGGING_ON((dbc)->dbp->dbenv) &&		\
-	    !F_ISSET((dbc), DBC_RECOVER) && !IS_REP_CLIENT((dbc)->dbp->dbenv))
+	    !F_ISSET((dbc), DBC_RECOVER) &&  \
+     !IS_REP_CLIENT((dbc)->dbp->dbenv) &&  \
+        !gbl_is_physical_replicant)
 #endif
 
 /* This is here to sniff out a crash seen in a SET_RANGE call where the dbc's 

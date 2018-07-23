@@ -308,8 +308,14 @@ __rep_start(dbenv, dbt, gen, flags)
 			 * we become a client and the original master
 			 * that opened them becomes a master again.
 			 */
-			if ((ret = __rep_preclose(dbenv, 1)) != 0)
-				goto errunlock;
+            
+            if (!gbl_is_physical_replicant)
+            {
+
+                logmsg(LOGMSG_WARN, "I'm not supposed to be here!!!\n");
+                if (!gbl_is_physical_replicant && ((ret = __rep_preclose(dbenv, 1)) != 0))
+                    goto errunlock;
+            }
 		}
 
 		redo_prepared = 0;

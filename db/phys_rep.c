@@ -133,6 +133,8 @@ void* keep_in_sync(void* args)
     while (!sc_ready())
         nanosleep(&wait_spec, &remain_spec);
 
+    backend_thread_event(thedb, COMDB2_THR_EVENT_START_RDWR);
+
     while(do_repl)
     {
         LOG_INFO info = get_last_lsn(thedb->bdb_env);
@@ -182,6 +184,9 @@ void* keep_in_sync(void* args)
     }
 
     cdb2_close(repl_db);
+
+    backend_thread_event(thedb, COMDB2_THR_EVENT_DONE_RDWR);
+
     return NULL;
 }
 

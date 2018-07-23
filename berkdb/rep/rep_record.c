@@ -3644,16 +3644,16 @@ gap_check:		max_lsn_dbtp = NULL;
 
 				if (dbenv->num_recovery_processor_threads &&
 				    dbenv->num_recovery_worker_threads) {
+                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
 					ret =
 					    __rep_process_txn_concurrent(dbenv,
 					    rp, rec, &ltrans, rp->lsn, max_lsn,
 					    commit_gen, dbenv->prev_commit_lsn);
-                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
                 } else {
+                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
 					ret =
 					    __rep_process_txn(dbenv, rp, rec,
 					    &ltrans, max_lsn, commit_gen);
-                    logmsg(LOGMSG_WARN, "I'm going nuts at line: %u \n", __LINE__);
                 }
 
                 fprintf(stderr, "ret is ded here: %d\n", ret);
@@ -4730,6 +4730,8 @@ __rep_process_txn_int(dbenv, rctl, rec, ltrans, maxlsn, commit_gen, lockid, rp,
 	if ((ret = __log_cursor(dbenv, &logc)) != 0)
 		goto err;
 
+    logmsg(LOGMSG_WARN, "I'm in rep_process_txn_int: %u \n", __LINE__);
+
 	/* Phase 1.  Get a list of the LSNs in this transaction, and sort it. */
 	if (lcin)
 		lc = *lcin;
@@ -4764,6 +4766,8 @@ __rep_process_txn_int(dbenv, rctl, rec, ltrans, maxlsn, commit_gen, lockid, rp,
 	 */
 	if ((ret = __db_txnlist_init(dbenv, 0, 0, NULL, &txninfo)) != 0)
 		goto err;
+
+    logmsg(LOGMSG_WARN, "I'm in rep_process_txn_int: %u \n", __LINE__);
 
 	/* Phase 2: Apply updates. */
 	for (i = 0; i < lc.nlsns; i++) {
@@ -4806,6 +4810,7 @@ __rep_process_txn_int(dbenv, rctl, rec, ltrans, maxlsn, commit_gen, lockid, rp,
 				    needed_to_get_record_from_log ? &data_dbt :
 				    &lcin_dbt, lsnp, DB_TXN_APPLY,
 				    txninfo)) != 0) {
+                logmsg(LOGMSG_WARN, "I'm in rep_process_txn_int: %u \n", __LINE__);
 				if (ret != DB_LOCK_DEADLOCK)
 					__db_err(dbenv,
 					    "transaction failed at [%lu][%lu]",
@@ -4927,6 +4932,7 @@ __rep_process_txn(dbenv, rctl, rec, ltrans, maxlsn, commit_gen)
 		bbtime_t start = { 0 }, end = {
 		0};
 
+        logmsg(LOGMSG_WARN, "I'm in rep_process_txn: %u \n", __LINE__);
 		rep_process_txn_cnt++;
 		getbbtime(&start);
 		rc = __rep_process_txn_int(dbenv, rctl, rec, ltrans, maxlsn,

@@ -1224,84 +1224,90 @@ __db_apprec(dbenv, max_lsn, trunclsn, update, flags)
 		goto err;
 
 done:
-	if (max_lsn != NULL) {
-		/*
-		 * When I truncate, I am running replicated recovery.
-		 * I am synced all the way to the last checkpoint, so
-		 * dropping the all the checkpoints in the truncation
-		 * log phase does not make me bad
-		 */
-		DB_LSN last_valid_checkpoint = { 0 };
-
-		/*
-		 * We can't truncate before we write a valid
-		 * checkpoint into the checkpoint file.  We don't know
-		 * what that is.  Find it.  By this point we already
-		 * did recovery, so any checkpoint LSN < max_lsn is
-		 * valid.
-		 */
-		if ((ret =
-			__log_find_latest_checkpoint_before_lsn(dbenv, logc,
-			    max_lsn, &last_valid_checkpoint)) != 0) {
-			__db_err(dbenv,
-			    "can't find last logged checkpoint max_lsn %u:%u",
-			    max_lsn->file, max_lsn->offset);
-			ret =
-			    __log_find_latest_checkpoint_before_lsn_try_harder
-			    (dbenv, logc, max_lsn, &last_valid_checkpoint);
-			if (ret == 0)
-				logmsg(LOGMSG_DEBUG, "tried harder and found %u:%u\n",
-				    last_valid_checkpoint.file,
-				    last_valid_checkpoint.offset);
-			else {
-				logmsg(LOGMSG_DEBUG, "tried harder and still failed rc; I'll be good unless I crash %d\n",
-				    ret);
-				/* Here we are gonna write a checkpoint FILE containing 0:0 as recovery lsn, claiming all it 
-				 * is good at this point */
-				/*goto err; */
-			}
-		}
-
-		/* Save the checkpoint. */
+	if (max_lsn != NULL || gbl_is_physical_replicant) {
 
         if (!gbl_is_physical_replicant)
         {
+            /*
+             * When I truncate, I am running replicated recovery.
+             * I am synced all the way to the last checkpoint, so
+             * dropping the all the checkpoints in the truncation
+             * log phase does not make me bad
+             */
+            DB_LSN last_valid_checkpoint = { 0 };
+
+            /*
+             * We can't truncate before we write a valid
+             * checkpoint into the checkpoint file.  We don't know
+             * what that is.  Find it.  By this point we already
+             * did recovery, so any checkpoint LSN < max_lsn is
+             * valid.
+             */
             if ((ret =
-                __checkpoint_save(dbenv, &last_valid_checkpoint,
-                    1)) != 0) {
-                __db_err(dbenv, "can't save checkpoint %u:%u",
-                    last_valid_checkpoint.file,
-                    last_valid_checkpoint.offset);
-                goto err;
+                __log_find_latest_checkpoint_before_lsn(dbenv, logc,
+                    max_lsn, &last_valid_checkpoint)) != 0) {
+                __db_err(dbenv,
+                    "can't find last logged checkpoint max_lsn %u:%u",
+                    max_lsn->file, max_lsn->offset);
+                ret =
+                    __log_find_latest_checkpoint_before_lsn_try_harder
+                    (dbenv, logc, max_lsn, &last_valid_checkpoint);
+                if (ret == 0)
+                    logmsg(LOGMSG_DEBUG, "tried harder and found %u:%u\n",
+                        last_valid_checkpoint.file,
+                        last_valid_checkpoint.offset);
+                else {
+                    logmsg(LOGMSG_DEBUG, "tried harder and still failed rc; I'll be good unless I crash %d\n",
+                        ret);
+                    /* Here we are gonna write a checkpoint FILE containing 0:0 as recovery lsn, claiming all it 
+                     * is good at this point */
+                    /*goto err; */
+                }
             }
 
+            /* Save the checkpoint. */
+
+            if (!gbl_is_physical_replicant)
+            {
+                if ((ret =
+                    __checkpoint_save(dbenv, &last_valid_checkpoint,
+                        1)) != 0) {
+                    __db_err(dbenv, "can't save checkpoint %u:%u",
+                        last_valid_checkpoint.file,
+                        last_valid_checkpoint.offset);
+                    goto err;
+                }
+
+            }
+
+            logmsg(LOGMSG_WARN, "TRUNCATING to %u:%u checkpoint lsn is %u:%u\n",
+                max_lsn->file, max_lsn->offset,
+                last_valid_checkpoint.file, last_valid_checkpoint.offset);
+
+            region->last_ckp = ((DB_TXNHEAD *) txninfo)->ckplsn;
+            logmsg(LOGMSG_DEBUG, "%s:%d last_ckp is %u:%u\n", __FILE__, __LINE__,
+                region->last_ckp.file, region->last_ckp.offset);
+
+            if (IS_ZERO_LSN(region->last_ckp)) {
+                /* I still don't understand how this ends up as 0:0 */
+                logmsg(LOGMSG_DEBUG, "last_ckp zero lsn? Let's try %u:%u\n",
+                    last_valid_checkpoint.file,
+                    last_valid_checkpoint.offset);
+                region->last_ckp = last_valid_checkpoint;
+
+            }
+
+            /* We are going to truncate, so we'd best close the cursor. */
+            if (logc != NULL && (ret = __log_c_close(logc)) != 0)
+                goto err;
+
+            __log_vtruncate(dbenv, max_lsn, &region->last_ckp, trunclsn);
+
+            logmsg(LOGMSG_WARN, "TRUNCATED TO is %u:%u \n", trunclsn->file,
+                trunclsn->offset);
+
+            /* don't do above for phys replicant */
         }
-
-		logmsg(LOGMSG_WARN, "TRUNCATING to %u:%u checkpoint lsn is %u:%u\n",
-		    max_lsn->file, max_lsn->offset,
-		    last_valid_checkpoint.file, last_valid_checkpoint.offset);
-
-		region->last_ckp = ((DB_TXNHEAD *) txninfo)->ckplsn;
-		logmsg(LOGMSG_DEBUG, "%s:%d last_ckp is %u:%u\n", __FILE__, __LINE__,
-		    region->last_ckp.file, region->last_ckp.offset);
-
-		if (IS_ZERO_LSN(region->last_ckp)) {
-			/* I still don't understand how this ends up as 0:0 */
-			logmsg(LOGMSG_DEBUG, "last_ckp zero lsn? Let's try %u:%u\n",
-			    last_valid_checkpoint.file,
-			    last_valid_checkpoint.offset);
-			region->last_ckp = last_valid_checkpoint;
-
-		}
-
-		/* We are going to truncate, so we'd best close the cursor. */
-		if (logc != NULL && (ret = __log_c_close(logc)) != 0)
-			goto err;
-
-		__log_vtruncate(dbenv, max_lsn, &region->last_ckp, trunclsn);
-
-		logmsg(LOGMSG_WARN, "TRUNCATED TO is %u:%u \n", trunclsn->file,
-		    trunclsn->offset);
 
 		/*
 		 * Now we need to open files that should be open in order for

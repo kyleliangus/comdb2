@@ -157,10 +157,7 @@ __db_addrem_recover(dbenv, dbtp, lsnp, op, info)
 		    __db_addrem_verify_fileid(dbenv, file_dbp, lsnp,
 		    &argp->prev_lsn, argp->fileid);
 		if (ret)
-        {
-            logmsg(LOGMSG_ERROR, "addrem recover failed at %d\n", __LINE__);
 			goto out;
-        }
 	}
 
 	if ((ret = __memp_fget(mpf, &argp->pgno, 0, &pagep)) != 0) {
@@ -175,10 +172,7 @@ __db_addrem_recover(dbenv, dbtp, lsnp, op, info)
 		} else
 			if ((ret = __memp_fget(mpf,
 			    &argp->pgno, DB_MPOOL_CREATE, &pagep)) != 0)
-            {
-                logmsg(LOGMSG_ERROR, "addrem recover failed at %d\n", __LINE__);
 				goto out;
-            }
 	}
 
     if (check_page) {
@@ -217,22 +211,14 @@ __db_addrem_recover(dbenv, dbtp, lsnp, op, info)
 			    argp->hdr.size == 0 ? NULL : &argp->hdr,
 			    argp->dbt.size == 0 ? NULL : &argp->dbt,
 			    argp->opcode)) != 0)
-        {
-
-            logmsg(LOGMSG_ERROR, "addrem recover failed at %d\n", __LINE__);
 			 goto out;
-        }
 		change = DB_MPOOL_DIRTY;
 	} else if ((cmp_n == 0 && DB_UNDO(op) && argp->opcode == DB_ADD_DUP) ||
 	    (cmp_p == 0 && DB_REDO(op) && IS_REM_OPCODE(argp->opcode))) {
 		/* Need to undo an add, or redo a delete. */
 		if ((ret = __db_ditem(dbc,
 			    pagep, argp->indx, argp->nbytes)) != 0)
-        {
-
-            logmsg(LOGMSG_ERROR, "addrem recover failed at %d\n", __LINE__);
 			goto out;
-        }
 		change = DB_MPOOL_DIRTY;
 	}
 
@@ -249,11 +235,7 @@ __db_addrem_recover(dbenv, dbtp, lsnp, op, info)
     }
 
 	if ((ret = __memp_fput(mpf, pagep, change)) != 0)
-    {
-
-        logmsg(LOGMSG_ERROR, "addrem recover failed at %d\n", __LINE__);
 		goto out;
-    }
 	pagep = NULL;
 
 done:	*lsnp = argp->prev_lsn;

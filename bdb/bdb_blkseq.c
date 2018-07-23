@@ -38,6 +38,8 @@
 static int bdb_blkseq_update_lsn_locked(bdb_state_type *bdb_state,
                                         int timestamp, DB_LSN lsn, int stripe);
 
+extern int gbl_is_physical_replicant;
+
 static DB *create_blkseq(bdb_state_type *bdb_state, int stripe, int num)
 {
     char fname[1024];
@@ -404,8 +406,9 @@ int bdb_blkseq_insert(bdb_state_type *bdb_state, tran_type *tran, void *key,
     /* succeded in updating local table, log the update if transactional
      * (recovery isn't) */
     if (tran) {
-        rc = llog_blkseq_log(bdb_state->dbenv, tran->tid, &lsn, 0, now, &dkey,
-                             &ddata);
+        if (!gbl_is_physical_replicant)
+            rc = llog_blkseq_log(bdb_state->dbenv, tran->tid, &lsn, 0, now, &dkey,
+                    &ddata);
 
         /* Don't bother with these during recovery since we'll run
          * bdb_blkseq_recover to
@@ -545,7 +548,7 @@ int bdb_blkseq_dumpall(bdb_state_type *bdb_state, uint8_t stripe)
 
     for (int i = 0; i < 2; i++) {
         rc = bdb_state->blkseq[i][stripe]->cursor(bdb_state->blkseq[i][stripe],
-                                                  NULL, &dbc, 0);
+                NULL, &dbc, 0);
         logmsg(LOGMSG_USER, "stripe %d idx %d last_lsn=[%d][%d]\n", stripe, i, 
                 bdb_state->blkseq_last_lsn[i][stripe].file,
                 bdb_state->blkseq_last_lsn[i][stripe].offset);
@@ -558,7 +561,7 @@ int bdb_blkseq_dumpall(bdb_state_type *bdb_state, uint8_t stripe)
             k = (int *)dkey.data;
             if (ddata.size < sizeof(int)) {
                 logmsg(LOGMSG_ERROR, "%x %x %x invalid sz %d\n", k[0], k[1], k[2],
-                       ddata.size);
+                        ddata.size);
             } else {
                 int timestamp;
                 int age;
@@ -651,11 +654,11 @@ int bdb_recover_blkseq(bdb_state_type *bdb_state)
                 int *k;
                 k = (int *)blkseq->key.data;
                 if ((now - blkseq->time) >
-                    bdb_state->attr->private_blkseq_maxage) {
+                        bdb_state->attr->private_blkseq_maxage) {
                     logmsg(LOGMSG_INFO,
-                           "Stopping at " PR_LSN ", blkseq age %ld > max %d\n",
-                           PARM_LSN(lsn), now - blkseq->time,
-                           bdb_state->attr->private_blkseq_maxage);
+                            "Stopping at " PR_LSN ", blkseq age %ld > max %d\n",
+                            PARM_LSN(lsn), now - blkseq->time,
+                            bdb_state->attr->private_blkseq_maxage);
                     break;
                 }
 
@@ -684,13 +687,13 @@ int bdb_recover_blkseq(bdb_state_type *bdb_state)
                 }
 
                 rc = bdb_blkseq_insert(bdb_state, NULL, blkseq->key.data,
-                                       blkseq->key.size, blkseq->data.data,
-                                       blkseq->data.size, NULL, NULL);
+                        blkseq->key.size, blkseq->data.data,
+                        blkseq->data.size, NULL, NULL);
                 if (rc == IX_DUP)
                     ndupes++;
                 else if (rc) {
                     logmsg(LOGMSG_ERROR, "at " PR_LSN " bdb_blkseq_insert %x %x %x rc %d\n",
-                           PARM_LSN(lsn), k[0], k[1], k[2], rc);
+                            PARM_LSN(lsn), k[0], k[1], k[2], rc);
                     goto err;
                 } else
                     nblkseq++;
@@ -722,8 +725,8 @@ int bdb_recover_blkseq(bdb_state_type *bdb_state)
 
     if (rc == 0) {
         logmsg(LOGMSG_INFO, "blkseq recovery " PR_LSN " <- " PR_LSN
-               ", %d blkseqs, %d during recovery\n",
-               PARM_LSN(lsn), PARM_LSN(last_lsn), nblkseq, ndupes);
+                ", %d blkseqs, %d during recovery\n",
+                PARM_LSN(lsn), PARM_LSN(last_lsn), nblkseq, ndupes);
     }
 
 err:
@@ -742,7 +745,7 @@ int bdb_blkseq_dumplogs(bdb_state_type *bdb_state)
     int now = comdb2_time_epoch();
 
     for (int stripe = 0; stripe < bdb_state->attr->private_blkseq_stripes;
-         stripe++) {
+            stripe++) {
         pthread_mutex_lock(&bdb_state->blkseq_lk[stripe]);
         LISTC_FOR_EACH(&bdb_state->blkseq_log_list[stripe], logseq, lnk)
         {
@@ -761,14 +764,14 @@ int bdb_blkseq_can_delete_log(bdb_state_type *bdb_state, int lognum)
     int now = comdb2_time_epoch();
 
     for (int stripe = 0; stripe < bdb_state->attr->private_blkseq_stripes;
-         stripe++) {
+            stripe++) {
         pthread_mutex_lock(&bdb_state->blkseq_lk[stripe]);
         LISTC_FOR_EACH(&bdb_state->blkseq_log_list[stripe], logseq, lnk)
         {
             if (logseq->logfile == lognum) {
                 found++;
                 if ((now - logseq->timestamp) >
-                    bdb_state->attr->private_blkseq_maxage)
+                        bdb_state->attr->private_blkseq_maxage)
                     num_ok++;
             }
         }
@@ -781,10 +784,10 @@ int bdb_blkseq_can_delete_log(bdb_state_type *bdb_state, int lognum)
      * entries will be found) */
     if (found == num_ok) {
         for (int stripe = 0; stripe < bdb_state->attr->private_blkseq_stripes;
-             stripe++) {
+                stripe++) {
             pthread_mutex_lock(&bdb_state->blkseq_lk[stripe]);
             LISTC_FOR_EACH_SAFE(&bdb_state->blkseq_log_list[stripe], logseq,
-                                logseqtmp, lnk)
+                    logseqtmp, lnk)
             {
                 if (logseq->logfile == lognum) {
                     listc_rfl(&bdb_state->blkseq_log_list[stripe], logseq);

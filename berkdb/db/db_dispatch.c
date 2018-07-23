@@ -437,7 +437,7 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 	DB_ASSERT(dtab != NULL);
 
 
-    logmsg(LOGMSG_WARN, "I'm in db_dispatch line: %u \n", __LINE__);
+    // logmsg(LOGMSG_WARN, "I'm in db_dispatch line: %u \n", __LINE__);
 
 	/*
 	 * If we find a record that is in the user's number space and they
@@ -668,7 +668,7 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 		if (rectype >= DB_user_BEGIN && dbenv->app_dispatch != NULL)
         {
 
-            logmsg(LOGMSG_WARN, "Did i really get here: %u \n", __LINE__);
+            logmsg(LOGMSG_WARN, "__db_dispatch is here: %u \n", __LINE__);
 			return (dbenv->app_dispatch(dbenv, db, lsnp, redo));
         }
 		else {
@@ -684,8 +684,12 @@ __db_dispatch(dbenv, dtab, dtabsize, db, lsnp, redo, info)
 				return (EINVAL);
 			}
 			/* let's do this only on the replicants, for now */
-            logmsg(LOGMSG_WARN, "Did i really get here: %u \n", __LINE__);
-            logmsg(LOGMSG_WARN, "What is this? %d\n", rectype);
+            // logmsg(LOGMSG_WARN, "Did i really get here: %u \n", __LINE__);
+            // logmsg(LOGMSG_WARN, "File: %d Offset: %d\n", lsnp->file, lsnp->offset);
+            if (lsnp->offset == 901237)
+            {
+                logmsg(LOGMSG_WARN, "Make debugging EZ\n");
+            }
 			return (dtab[rectype](dbenv, db, lsnp, redo, info));
 		}
 	}

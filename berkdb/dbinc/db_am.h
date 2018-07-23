@@ -55,6 +55,7 @@
 			ret = 0;					\
 			goto done;					\
 		}							\
+        logmsg(LOGMSG_ERROR, "addrem recover dbereg_id failed at %d\n", __LINE__); \
 		goto out;						\
 	}								\
 	if ((ret = __db_cursor(file_dbp, NULL, &dbc, 0)) != 0)		\

@@ -71,6 +71,7 @@ static int  __db_testdocopy __P((DB_ENV *, const char *));
 static int  __qam_testdocopy __P((DB *, const char *));
 #endif
 
+extern int gbl_is_physical_replicant;
 /*
  * DB.C --
  *	This file contains the utility functions for the DBP layer.
@@ -1076,51 +1077,52 @@ __db_backup_name(dbenv, name, txn, backup)
 			 * a valid dbp, and we aren't guaranteed to be able
 			 * to pass one in here.
 			 */
-			if ((ret = __db_debug_log(dbenv, txn, &lsn, 0,
-			    NULL, 0, NULL, NULL, 0)) != 0)
-				return (ret);
-		} else
-			lsn = txn->last_lsn;
-		use_lsn = 1;
-	} else
-		use_lsn = 0;
+            if (!gbl_is_physical_replicant && 
+                    ((ret = __db_debug_log(dbenv, txn, &lsn, 0,
+                                           NULL, 0, NULL, NULL, 0)) != 0))
+                return (ret);
+        } else
+            lsn = txn->last_lsn;
+        use_lsn = 1;
+    } else
+        use_lsn = 0;
 
-	/*
-	 * Part of the name may be a full path, so we need to make sure that
-	 * we allocate enough space for it, even in the case where we don't
-	 * use the entire filename for the backup name.
-	 */
-	len = strlen(name) + strlen(BACKUP_PREFIX) + MAX_LSN_TO_TEXT;
+    /*
+     * Part of the name may be a full path, so we need to make sure that
+     * we allocate enough space for it, even in the case where we don't
+     * use the entire filename for the backup name.
+     */
+    len = strlen(name) + strlen(BACKUP_PREFIX) + MAX_LSN_TO_TEXT;
 
-	if ((ret = __os_malloc(dbenv, len, &retp)) != 0)
-		return (ret);
+    if ((ret = __os_malloc(dbenv, len, &retp)) != 0)
+        return (ret);
 
-	/*
-	 * There are four cases here:
-	 *	1. simple path w/out transaction
-	 *	2. simple path + transaction
-	 *	3. multi-component path w/out transaction
-	 *	4. multi-component path + transaction
-	 */
-	if ((p = __db_rpath(name)) == NULL) {
-		if (use_lsn) /* case 2 */
-			snprintf(retp, len,
-			    "%s%x.%x", BACKUP_PREFIX, lsn.file, lsn.offset);
-		else /* case 1 */
-			snprintf(retp, len, "%s%s", BACKUP_PREFIX, name);
-	} else {
-		plen = (int)(p - name) + 1;
-		p++;
-		if (use_lsn)	/* case 4 */
-			snprintf(retp, len,
-			    "%.*s%x.%x", plen, name, lsn.file, lsn.offset);
-		else /* case 3 */
-			snprintf(retp, len,
-			    "%.*s%s%s", plen, name, BACKUP_PREFIX, p);
-	}
+    /*
+     * There are four cases here:
+     *	1. simple path w/out transaction
+     *	2. simple path + transaction
+     *	3. multi-component path w/out transaction
+     *	4. multi-component path + transaction
+     */
+    if ((p = __db_rpath(name)) == NULL) {
+        if (use_lsn) /* case 2 */
+            snprintf(retp, len,
+                    "%s%x.%x", BACKUP_PREFIX, lsn.file, lsn.offset);
+        else /* case 1 */
+            snprintf(retp, len, "%s%s", BACKUP_PREFIX, name);
+    } else {
+        plen = (int)(p - name) + 1;
+        p++;
+        if (use_lsn)	/* case 4 */
+            snprintf(retp, len,
+                    "%.*s%x.%x", plen, name, lsn.file, lsn.offset);
+        else /* case 3 */
+            snprintf(retp, len,
+                    "%.*s%s%s", plen, name, BACKUP_PREFIX, p);
+    }
 
-	*backup = retp;
-	return (0);
+    *backup = retp;
+    return (0);
 }
 
 /*
@@ -1130,55 +1132,55 @@ __db_backup_name(dbenv, name, txn, backup)
  *
  * PUBLIC: DB *__dblist_get __P((DB_ENV *, u_int32_t));
  */
-DB *
+    DB *
 __dblist_get(dbenv, adjid)
-	DB_ENV *dbenv;
-	u_int32_t adjid;
+    DB_ENV *dbenv;
+    u_int32_t adjid;
 {
-	DB *dbp;
-	int ct = 0;
+    DB *dbp;
+    int ct = 0;
 
-	dbp = dbenv->dbs[adjid].top;
-	return dbp;
+    dbp = dbenv->dbs[adjid].top;
+    return dbp;
 }
 
 /*
  * __db_disassociate --
  *	Destroy the association between a given secondary and its primary.
  */
-static int
+    static int
 __db_disassociate(sdbp)
-	DB *sdbp;
+    DB *sdbp;
 {
-	DBC *dbc;
-	int ret, t_ret;
+    DBC *dbc;
+    int ret, t_ret;
 
-	ret = 0;
+    ret = 0;
 
-	sdbp->s_callback = NULL;
-	sdbp->s_primary = NULL;
-	sdbp->get = sdbp->stored_get;
-	sdbp->close = sdbp->stored_close;
+    sdbp->s_callback = NULL;
+    sdbp->s_primary = NULL;
+    sdbp->get = sdbp->stored_get;
+    sdbp->close = sdbp->stored_close;
 
-	/*
-	 * Complain, but proceed, if we have any active cursors.  (We're in
-	 * the middle of a close, so there's really no turning back.)
-	 */
-	if (sdbp->s_refcnt != 1 ||
-	    TAILQ_FIRST(&sdbp->active_queue) != NULL ||
-	    TAILQ_FIRST(&sdbp->join_queue) != NULL) {
-		__db_err(sdbp->dbenv,
-    "Closing a primary DB while a secondary DB has active cursors is unsafe");
-		ret = EINVAL;
-	}
-	sdbp->s_refcnt = 0;
+    /*
+     * Complain, but proceed, if we have any active cursors.  (We're in
+     * the middle of a close, so there's really no turning back.)
+     */
+    if (sdbp->s_refcnt != 1 ||
+            TAILQ_FIRST(&sdbp->active_queue) != NULL ||
+            TAILQ_FIRST(&sdbp->join_queue) != NULL) {
+        __db_err(sdbp->dbenv,
+                "Closing a primary DB while a secondary DB has active cursors is unsafe");
+        ret = EINVAL;
+    }
+    sdbp->s_refcnt = 0;
 
-	while ((dbc = TAILQ_FIRST(&sdbp->free_queue)) != NULL)
-		if ((t_ret = __db_c_destroy(dbc)) != 0 && ret == 0)
-			ret = t_ret;
+    while ((dbc = TAILQ_FIRST(&sdbp->free_queue)) != NULL)
+        if ((t_ret = __db_c_destroy(dbc)) != 0 && ret == 0)
+            ret = t_ret;
 
-	F_CLR(sdbp, DB_AM_SECONDARY);
-	return (ret);
+    F_CLR(sdbp, DB_AM_SECONDARY);
+    return (ret);
 }
 
 #if CONFIG_TEST
@@ -1190,57 +1192,57 @@ __db_disassociate(sdbp)
  * PUBLIC: int __db_testcopy __P((DB_ENV *, DB *, const char *));
  * PUBLIC: #endif
  */
-int
+    int
 __db_testcopy(dbenv, dbp, name)
-	DB_ENV *dbenv;
-	DB *dbp;
-	const char *name;
+    DB_ENV *dbenv;
+    DB *dbp;
+    const char *name;
 {
-	DB_MPOOL *dbmp;
-	DB_MPOOLFILE *mpf;
+    DB_MPOOL *dbmp;
+    DB_MPOOLFILE *mpf;
 
-	DB_ASSERT(dbp != NULL || name != NULL);
+    DB_ASSERT(dbp != NULL || name != NULL);
 
-	if (name == NULL) {
-		dbmp = dbenv->mp_handle;
-		mpf = dbp->mpf;
-		name = R_ADDR(dbmp->reginfo, mpf->mfp->path_off);
-	}
+    if (name == NULL) {
+        dbmp = dbenv->mp_handle;
+        mpf = dbp->mpf;
+        name = R_ADDR(dbmp->reginfo, mpf->mfp->path_off);
+    }
 
-	if (dbp != NULL && dbp->type == DB_QUEUE)
-		return (__qam_testdocopy(dbp, name));
-	else
-		return (__db_testdocopy(dbenv, name));
+    if (dbp != NULL && dbp->type == DB_QUEUE)
+        return (__qam_testdocopy(dbp, name));
+    else
+        return (__db_testdocopy(dbenv, name));
 }
 
-static int
+    static int
 __qam_testdocopy(dbp, name)
-	DB *dbp;
-	const char *name;
+    DB *dbp;
+    const char *name;
 {
-	QUEUE_FILELIST *filelist, *fp;
-	char buf[256], *dir;
-	int ret;
+    QUEUE_FILELIST *filelist, *fp;
+    char buf[256], *dir;
+    int ret;
 
-	filelist = NULL;
-	if ((ret = __db_testdocopy(dbp->dbenv, name)) != 0)
-		return (ret);
-	if (dbp->mpf != NULL &&
-	    (ret = __qam_gen_filelist(dbp, &filelist)) != 0)
-		return (ret);
+    filelist = NULL;
+    if ((ret = __db_testdocopy(dbp->dbenv, name)) != 0)
+        return (ret);
+    if (dbp->mpf != NULL &&
+            (ret = __qam_gen_filelist(dbp, &filelist)) != 0)
+        return (ret);
 
-	if (filelist == NULL)
-		return (0);
-	dir = ((QUEUE *)dbp->q_internal)->dir;
-	for (fp = filelist; fp->mpf != NULL; fp++) {
-		snprintf(buf, sizeof(buf),
-		    QUEUE_EXTENT, dir, PATH_SEPARATOR[0], name, fp->id);
-		if ((ret = __db_testdocopy(dbp->dbenv, buf)) != 0)
-			return (ret);
-	}
+    if (filelist == NULL)
+        return (0);
+    dir = ((QUEUE *)dbp->q_internal)->dir;
+    for (fp = filelist; fp->mpf != NULL; fp++) {
+        snprintf(buf, sizeof(buf),
+                QUEUE_EXTENT, dir, PATH_SEPARATOR[0], name, fp->id);
+        if ((ret = __db_testdocopy(dbp->dbenv, buf)) != 0)
+            return (ret);
+    }
 
-	__os_free(dbp->dbenv, filelist);
-	return (0);
+    __os_free(dbp->dbenv, filelist);
+    return (0);
 }
 
 /*
@@ -1248,149 +1250,149 @@ __qam_testdocopy(dbp, name)
  *	Create a copy of all backup files and our "main" DB.
  *
  */
-static int
+    static int
 __db_testdocopy(dbenv, name)
-	DB_ENV *dbenv;
-	const char *name;
+    DB_ENV *dbenv;
+    const char *name;
 {
-	size_t len;
-	int dircnt, i, ret;
-	char **namesp, *backup, *copy, *dir, *p, *real_name;
-	real_name = NULL;
-	/* Get the real backing file name. */
-	if ((ret = __db_appname(dbenv,
-	    DB_APP_DATA, name, 0, NULL, &real_name)) != 0)
-		return (ret);
+    size_t len;
+    int dircnt, i, ret;
+    char **namesp, *backup, *copy, *dir, *p, *real_name;
+    real_name = NULL;
+    /* Get the real backing file name. */
+    if ((ret = __db_appname(dbenv,
+                    DB_APP_DATA, name, 0, NULL, &real_name)) != 0)
+        return (ret);
 
-	copy = backup = NULL;
-	namesp = NULL;
+    copy = backup = NULL;
+    namesp = NULL;
 
-	/*
-	 * Maximum size of file, including adding a ".afterop".
-	 */
-	len = strlen(real_name) + strlen(BACKUP_PREFIX) + MAX_LSN_TO_TEXT + 9;
+    /*
+     * Maximum size of file, including adding a ".afterop".
+     */
+    len = strlen(real_name) + strlen(BACKUP_PREFIX) + MAX_LSN_TO_TEXT + 9;
 
-	if ((ret = __os_malloc(dbenv, len, &copy)) != 0)
-		goto out;
+    if ((ret = __os_malloc(dbenv, len, &copy)) != 0)
+        goto out;
 
-	if ((ret = __os_malloc(dbenv, len, &backup)) != 0)
-		goto out;
+    if ((ret = __os_malloc(dbenv, len, &backup)) != 0)
+        goto out;
 
-	/*
-	 * First copy the file itself.
-	 */
-	snprintf(copy, len, "%s.afterop", real_name);
-	__db_makecopy(dbenv, real_name, copy);
+    /*
+     * First copy the file itself.
+     */
+    snprintf(copy, len, "%s.afterop", real_name);
+    __db_makecopy(dbenv, real_name, copy);
 
-	if ((ret = __os_strdup(dbenv, real_name, &dir)) != 0)
-		goto out;
-	__os_free(dbenv, real_name);
-	real_name = NULL;
-	/*
-	 * Create the name.  Backup file names are of the form:
-	 *
-	 *	__db.name.0x[lsn-file].0x[lsn-offset]
-	 *
-	 * which guarantees uniqueness.  We want to look for the
-	 * backup name, followed by a '.0x' (so that if they have
-	 * files named, say, 'a' and 'abc' we won't match 'abc' when
-	 * looking for 'a'.
-	 */
-	snprintf(backup, len, "%s%s.0x", BACKUP_PREFIX, name);
+    if ((ret = __os_strdup(dbenv, real_name, &dir)) != 0)
+        goto out;
+    __os_free(dbenv, real_name);
+    real_name = NULL;
+    /*
+     * Create the name.  Backup file names are of the form:
+     *
+     *	__db.name.0x[lsn-file].0x[lsn-offset]
+     *
+     * which guarantees uniqueness.  We want to look for the
+     * backup name, followed by a '.0x' (so that if they have
+     * files named, say, 'a' and 'abc' we won't match 'abc' when
+     * looking for 'a'.
+     */
+    snprintf(backup, len, "%s%s.0x", BACKUP_PREFIX, name);
 
-	/*
-	 * We need the directory path to do the __os_dirlist.
-	 */
-	p = __db_rpath(dir);
-	if (p != NULL)
-		*p = '\0';
-	ret = __os_dirlist(dbenv, dir, &namesp, &dircnt);
+    /*
+     * We need the directory path to do the __os_dirlist.
+     */
+    p = __db_rpath(dir);
+    if (p != NULL)
+        *p = '\0';
+    ret = __os_dirlist(dbenv, dir, &namesp, &dircnt);
 #if DIAGNOSTIC
-	/*
-	 * XXX
-	 * To get the memory guard code to work because it uses strlen and we
-	 * just moved the end of the string somewhere sooner.  This causes the
-	 * guard code to fail because it looks at one byte past the end of the
-	 * string.
-	 */
-	*p = '/';
+    /*
+     * XXX
+     * To get the memory guard code to work because it uses strlen and we
+     * just moved the end of the string somewhere sooner.  This causes the
+     * guard code to fail because it looks at one byte past the end of the
+     * string.
+     */
+    *p = '/';
 #endif
-	__os_free(dbenv, dir);
-	if (ret != 0)
-		goto out;
-	for (i = 0; i < dircnt; i++) {
-		/*
-		 * Need to check if it is a backup file for this.
-		 * No idea what namesp[i] may be or how long, so
-		 * must use strncmp and not memcmp.  We don't want
-		 * to use strcmp either because we are only matching
-		 * the first part of the real file's name.  We don't
-		 * know its LSN's.
-		 */
-		if (strncmp(namesp[i], backup, strlen(backup)) == 0) {
-			if ((ret = __db_appname(dbenv, DB_APP_DATA,
-			    namesp[i], 0, NULL, &real_name)) != 0)
-				goto out;
+    __os_free(dbenv, dir);
+    if (ret != 0)
+        goto out;
+    for (i = 0; i < dircnt; i++) {
+        /*
+         * Need to check if it is a backup file for this.
+         * No idea what namesp[i] may be or how long, so
+         * must use strncmp and not memcmp.  We don't want
+         * to use strcmp either because we are only matching
+         * the first part of the real file's name.  We don't
+         * know its LSN's.
+         */
+        if (strncmp(namesp[i], backup, strlen(backup)) == 0) {
+            if ((ret = __db_appname(dbenv, DB_APP_DATA,
+                            namesp[i], 0, NULL, &real_name)) != 0)
+                goto out;
 
-			/*
-			 * This should not happen.  Check that old
-			 * .afterop files aren't around.
-			 * If so, just move on.
-			 */
-			if (strstr(real_name, ".afterop") != NULL) {
-				__os_free(dbenv, real_name);
-				real_name = NULL;
-				continue;
-			}
-			snprintf(copy, len, "%s.afterop", real_name);
-			__db_makecopy(dbenv, real_name, copy);
-			__os_free(dbenv, real_name);
-			real_name = NULL;
-		}
-	}
+            /*
+             * This should not happen.  Check that old
+             * .afterop files aren't around.
+             * If so, just move on.
+             */
+            if (strstr(real_name, ".afterop") != NULL) {
+                __os_free(dbenv, real_name);
+                real_name = NULL;
+                continue;
+            }
+            snprintf(copy, len, "%s.afterop", real_name);
+            __db_makecopy(dbenv, real_name, copy);
+            __os_free(dbenv, real_name);
+            real_name = NULL;
+        }
+    }
 out:
-	if (backup != NULL)
-		__os_free(dbenv, backup);
-	if (copy != NULL)
-		__os_free(dbenv, copy);
-	if (namesp != NULL)
-		__os_dirfree(dbenv, namesp, dircnt);
-	if (real_name != NULL)
-		__os_free(dbenv, real_name);
-	return (ret);
+    if (backup != NULL)
+        __os_free(dbenv, backup);
+    if (copy != NULL)
+        __os_free(dbenv, copy);
+    if (namesp != NULL)
+        __os_dirfree(dbenv, namesp, dircnt);
+    if (real_name != NULL)
+        __os_free(dbenv, real_name);
+    return (ret);
 }
 
-static void
+    static void
 __db_makecopy(dbenv, src, dest)
-	DB_ENV *dbenv;
-	const char *src, *dest;
+    DB_ENV *dbenv;
+    const char *src, *dest;
 {
-	DB_FH *rfhp, *wfhp;
-	size_t rcnt, wcnt;
-	char *buf;
+    DB_FH *rfhp, *wfhp;
+    size_t rcnt, wcnt;
+    char *buf;
 
-	rfhp = wfhp = NULL;
+    rfhp = wfhp = NULL;
 
-	if (__os_malloc(dbenv, 1024, &buf) != 0)
-		return;
+    if (__os_malloc(dbenv, 1024, &buf) != 0)
+        return;
 
-	if (__os_open(dbenv,
-	    src, DB_OSO_RDONLY, __db_omode("rw----"), &rfhp) != 0)
-		goto err;
-	if (__os_open(dbenv, dest,
-	    DB_OSO_CREATE | DB_OSO_TRUNC, __db_omode("rw----"), &wfhp) != 0)
-		goto err;
+    if (__os_open(dbenv,
+                src, DB_OSO_RDONLY, __db_omode("rw----"), &rfhp) != 0)
+        goto err;
+    if (__os_open(dbenv, dest,
+                DB_OSO_CREATE | DB_OSO_TRUNC, __db_omode("rw----"), &wfhp) != 0)
+        goto err;
 
-	for (;;)
-		if (__os_read(dbenv, rfhp, buf, 1024, &rcnt) < 0 || rcnt == 0 ||
-		    __os_write(dbenv, wfhp, buf, rcnt, &wcnt) < 0)
-			break;
+    for (;;)
+        if (__os_read(dbenv, rfhp, buf, 1024, &rcnt) < 0 || rcnt == 0 ||
+                __os_write(dbenv, wfhp, buf, rcnt, &wcnt) < 0)
+            break;
 
 err:	if (buf != NULL)
-		__os_free(dbenv, buf);
-	if (rfhp != NULL)
-		(void)__os_closehandle(dbenv, rfhp);
-	if (wfhp != NULL)
-		(void)__os_closehandle(dbenv, wfhp);
+            __os_free(dbenv, buf);
+        if (rfhp != NULL)
+            (void)__os_closehandle(dbenv, rfhp);
+        if (wfhp != NULL)
+            (void)__os_closehandle(dbenv, wfhp);
 }
 #endif

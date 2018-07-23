@@ -467,6 +467,7 @@ __dbreg_id_to_db_int_int(dbenv, txn, dbpp, ndx, inc, tryopen, lsnp,
 	if (ndx < 0) {
 		ret = ENOENT;
 
+        logmsg(LOGMSG_WARN, "__dbreg_id_to_db_int_int: %u \n", __LINE__);
 		goto err;
 	}
 
@@ -481,6 +482,7 @@ __dbreg_id_to_db_int_int(dbenv, txn, dbpp, ndx, inc, tryopen, lsnp,
 		if (!tryopen || F_ISSET(dblp, DBLOG_RECOVER)) {
 			ret = ENOENT;
 
+            logmsg(LOGMSG_WARN, "__dbreg_id_to_db_int_int: %u \n", __LINE__);
 			goto err;
 		}
 
@@ -499,8 +501,12 @@ __dbreg_id_to_db_int_int(dbenv, txn, dbpp, ndx, inc, tryopen, lsnp,
 			 * case this will fail too.  Then it's up to the
 			 * caller to reopen the file.
 			 */
+        {
+            logmsg(LOGMSG_WARN, "__dbreg_id_to_db_int_int: %u \n", __LINE__);
 			return (ENOENT);
+        }
 
+        logmsg(LOGMSG_WARN, "__dbreg_id_to_db_int_int: %u \n", __LINE__);
 		/*
 		 * Note that we're relying on fname not to change, even
 		 * though we released the mutex that protects it (fq_mutex)
@@ -525,7 +531,10 @@ __dbreg_id_to_db_int_int(dbenv, txn, dbpp, ndx, inc, tryopen, lsnp,
 		if ((ret = __dbreg_do_open(dbenv, txn, dblp,
 		    fname->ufid, name, fname->s_type,
 		    ndx, fname->meta_pgno, NULL, 0)) != 0)
+        {
+            logmsg(LOGMSG_WARN, "__dbreg_id_to_db_int_int: %u \n", __LINE__);
 			return (ret);
+        }
 
 		*dbpp = dblp->dbentry[ndx].dbp;
 		return (0);
