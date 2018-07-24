@@ -3656,8 +3656,6 @@ gap_check:		max_lsn_dbtp = NULL;
 					    &ltrans, max_lsn, commit_gen);
                 }
 
-                fprintf(stderr, "ret is ded here: %d\n", ret);
-
 				/* Always release locks in order.  This is probably too conservative. */
 				if (0 == ret)
 					dbenv->prev_commit_lsn = max_lsn;
@@ -3844,6 +3842,17 @@ int __dbenv_apply_log(DB_ENV* dbenv, int file, int offset, int64_t rectype,
     /* call 1 when not new file, call 0 when new file */
     return __rep_apply(dbenv, &rp, &rec, &ret_lsnp, &rep->gen, 2);
 
+}
+
+size_t log_header_size(DB_ENV* dbenv)
+{
+	size_t hdrsize = HDR_NORMAL_SZ;
+
+	if (CRYPTO_ON(dbenv)) {
+		hdrsize = HDR_CRYPTO_SZ;
+	}
+
+    return hdrsize;
 }
 
 u_int32_t gbl_rep_lockid;

@@ -52,42 +52,13 @@ LOG_INFO get_last_lsn(bdb_state_type* bdb_state)
     return log_info;
 }
 
-u_int32_t get_next_lsn(bdb_state_type* bdb_state)
+u_int32_t get_next_offset(DB_ENV* dbenv, LOG_INFO log_info)
 {
-    LOG_INFO log_info = get_last_lsn(bdb_state);
-
-    return log_info.offset + log_info.size;
+    return log_info.offset + log_info.size + log_header_size(dbenv);
 }
 
 int apply_log(DB_ENV* dbenv, int file, int offset, int64_t rectype, 
         void* blob, int blob_len)
 {
-    // DB_ENV *dbenv;
-
-    /*
-    struct queued_log q;
-    REP_CONTROL rp;
-
-    DBT rec;
-    DB_LSN ret_lsnp;
-    uint32_t *commit_gen;
-    int decoupled;
-
-    rec.data = blob;
-    rec.size = blob_len;
-
-    ret_lsnp.file = file;
-    ret_lsnp.offset = offset;
-
-    rp.lsn = ret_lsnp;
-    rp.rep_version = 0;
-    rp.log_version = 0;
-    rp.flags = 0;
-
-    DB_REP* db_rep = dbenv->rep_handle;
-    REP* rep = db_rep->region;
-
-    dbenv->apply_log(args..);
-    */
     return __dbenv_apply_log(dbenv, file, offset, rectype, blob, blob_len);
 }

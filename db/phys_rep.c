@@ -32,7 +32,7 @@ static int idx = 0;
 static DB_Connection* get_connect(char* hostname);
 static int insert_connect(char* hostname);
 static void delete_connect(DB_Connection* cnct);
-static void handle_record();
+static LOG_INFO handle_record();
 
 static pthread_t sync_thread;
 /* internal implementation */
@@ -138,6 +138,7 @@ void* keep_in_sync(void* args)
     while(do_repl)
     {
         LOG_INFO info = get_last_lsn(thedb->bdb_env);
+        LOG_INFO prev_info = info;
 
         rc = snprintf(sql_cmd, sql_cmd_len, 
                 "select * from comdb2_transaction_logs('{%u:%u}')", 
@@ -165,7 +166,7 @@ void* keep_in_sync(void* args)
                         cdb2_column_type(repl_db, col));
             } */
 
-            handle_record();
+            prev_info = handle_record(prev_info);
 
         }
 
@@ -202,11 +203,9 @@ void stop_sync()
 }
 
 /* privates */
-static void handle_record()
+static LOG_INFO handle_record(LOG_INFO prev_info)
 {
     /* vars for 1 record */
-    int ncols;
-    int col;
     void* blob;
     int blob_len;
     char* lsn, *gen, *timestamp, *token;
@@ -251,14 +250,28 @@ static void handle_record()
 
     // TODO: implement this to use __rep_apply for one log record
     // Change it later
+    printf("I'm expecting offset at: %u\n", 
+            get_next_offset(thedb->bdb_env->dbenv, prev_info)); 
+    if (prev_info.file < file)
+    {
+        rc = apply_log(thedb->bdb_env->dbenv, prev_info.file, 
+                get_next_offset(thedb->bdb_env->dbenv, prev_info), 
+                REP_NEWFILE, NULL, 0); 
+    }
     rc = apply_log(thedb->bdb_env->dbenv, file, offset, 
             REP_LOG, blob, blob_len); 
-    rc = 0;
 
     if (rc != 0)
     {
         fprintf(stderr, "Something went wrong with applying the logs\n");
     }
+
+    LOG_INFO next_info;
+    next_info.file = file;
+    next_info.offset = offset;
+    next_info.size = blob_len;
+
+    return next_info;
 }
 
 /* data struct implementation */
